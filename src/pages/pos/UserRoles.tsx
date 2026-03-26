@@ -12,10 +12,10 @@ interface StaffMember {
 }
 
 const initialStaff: StaffMember[] = [
-  { id: '1', name: 'Admin User', role: 'admin', email: 'admin@Shiraz.com', active: true },
-  { id: '2', name: 'John Cashier', role: 'cashier', email: 'john@Shiraz.com', active: true },
-  { id: '3', name: 'Sarah Waiter', role: 'waiter', email: 'sarah@Shiraz.com', active: true },
-  { id: '4', name: 'Mike Waiter', role: 'waiter', email: 'mike@Shiraz.com', active: false },
+  { id: '1', name: 'Admin User', role: 'admin', email: 'admin@Shiraz Restaurant.com', active: true },
+  { id: '2', name: 'John Cashier', role: 'cashier', email: 'john@Shiraz Restaurant.com', active: true },
+  { id: '3', name: 'Sarah Waiter', role: 'waiter', email: 'sarah@Shiraz Restaurant.com', active: true },
+  { id: '4', name: 'Mike Waiter', role: 'waiter', email: 'mike@Shiraz Restaurant.com', active: false },
 ];
 
 const roleAccess: Record<Role, string[]> = {

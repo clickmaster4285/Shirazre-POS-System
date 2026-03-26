@@ -61,7 +61,7 @@ export default function Billing() {
         {/* Receipt */}
         <div className="pos-card">
           <div className="text-center mb-4 pb-4 border-b border-border border-dashed">
-            <h2 className="font-serif text-xl font-bold text-foreground">Shiraz Restaurant</h2>
+            <h2 className="font-serif text-xl font-bold text-foreground">Shiraz Restaurant Restaurant</h2>
             <p className="text-xs text-muted-foreground">123 Royal Avenue, Islamabad</p>
             <p className="text-xs text-muted-foreground">Tel: +92 51 1234567</p>
           </div>

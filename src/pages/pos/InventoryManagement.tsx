@@ -8,15 +8,15 @@ type Tab = 'stock' | 'logs' | 'suppliers' | 'alerts';
 export default function InventoryManagement() {
   const [tab, setTab] = useState<Tab>('stock');
   const [inventory, setInventory] = useState<InventoryItem[]>(() => {
-    const saved = localStorage.getItem('shirazre_inventory');
+    const saved = localStorage.getItem('Shiraz Restaurant_inventory');
     return saved ? JSON.parse(saved) : defaultInventory;
   });
   const [logs, setLogs] = useState<InventoryLog[]>(() => {
-    const saved = localStorage.getItem('shirazre_inv_logs');
+    const saved = localStorage.getItem('Shiraz Restaurant_inv_logs');
     return saved ? JSON.parse(saved) : defaultInventoryLogs;
   });
   const [suppliers] = useState<Supplier[]>(() => {
-    const saved = localStorage.getItem('shirazre_suppliers');
+    const saved = localStorage.getItem('Shiraz Restaurant_suppliers');
     return saved ? JSON.parse(saved) : defaultSuppliers;
   });
   const [search, setSearch] = useState('');
@@ -27,8 +27,8 @@ export default function InventoryManagement() {
   const [adjustAction, setAdjustAction] = useState<'add' | 'use' | 'waste'>('add');
   const [adjustNote, setAdjustNote] = useState('');
 
-  useEffect(() => { localStorage.setItem('shirazre_inventory', JSON.stringify(inventory)); }, [inventory]);
-  useEffect(() => { localStorage.setItem('shirazre_inv_logs', JSON.stringify(logs)); }, [logs]);
+  useEffect(() => { localStorage.setItem('Shiraz Restaurant_inventory', JSON.stringify(inventory)); }, [inventory]);
+  useEffect(() => { localStorage.setItem('Shiraz Restaurant_inv_logs', JSON.stringify(logs)); }, [logs]);
 
   const lowStockItems = inventory.filter(i => i.quantity <= i.minStock);
   const expiringItems = inventory.filter(i => {

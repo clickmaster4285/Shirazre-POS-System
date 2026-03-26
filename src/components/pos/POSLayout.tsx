@@ -32,7 +32,7 @@ export default function POSLayout() {
   const { user, logout, hasPageAccess } = useAuth();
 
   if (!user) {
-    localStorage.removeItem('Shiraz_user');
+    localStorage.removeItem('Shiraz Restaurant_user');
     return <Navigate to="/pos/login" replace />;
   }
 
@@ -102,7 +102,7 @@ export default function POSLayout() {
             </button>
             <span className="text-xs text-muted-foreground inline-flex items-center gap-2">
               <Logo size={22} showText={false} />
-              shirazre POS System
+              Shiraz Restaurant POS System
             </span>
           </div>
           <div className="flex items-center gap-2">

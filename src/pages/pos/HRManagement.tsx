@@ -8,23 +8,23 @@ type Tab = 'employees' | 'attendance' | 'leaves' | 'salary';
 export default function HRManagement() {
   const [tab, setTab] = useState<Tab>('employees');
   const [employees, setEmployees] = useState<Employee[]>(() => {
-    const saved = localStorage.getItem('shirazre_employees');
+    const saved = localStorage.getItem('Shiraz Restaurant_employees');
     return saved ? JSON.parse(saved) : defaultEmployees;
   });
   const [attendance, setAttendance] = useState<AttendanceRecord[]>(() => {
-    const saved = localStorage.getItem('shirazre_attendance');
+    const saved = localStorage.getItem('Shiraz Restaurant_attendance');
     return saved ? JSON.parse(saved) : defaultAttendance;
   });
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>(() => {
-    const saved = localStorage.getItem('shirazre_leaves');
+    const saved = localStorage.getItem('Shiraz Restaurant_leaves');
     return saved ? JSON.parse(saved) : defaultLeaveRequests;
   });
   const [leaveBalances, setLeaveBalances] = useState<LeaveBalance[]>(() => {
-    const saved = localStorage.getItem('shirazre_leave_balances');
+    const saved = localStorage.getItem('Shiraz Restaurant_leave_balances');
     return saved ? JSON.parse(saved) : defaultLeaveBalances;
   });
   const [salaryRecords, setSalaryRecords] = useState<SalaryRecord[]>(() => {
-    const saved = localStorage.getItem('shirazre_salary');
+    const saved = localStorage.getItem('Shiraz Restaurant_salary');
     return saved ? JSON.parse(saved) : defaultSalaryRecords;
   });
   const [search, setSearch] = useState('');
@@ -35,11 +35,11 @@ export default function HRManagement() {
   const [adjustDeduction, setAdjustDeduction] = useState('');
   const [adjustLateFine, setAdjustLateFine] = useState('');
 
-  useEffect(() => { localStorage.setItem('shirazre_employees', JSON.stringify(employees)); }, [employees]);
-  useEffect(() => { localStorage.setItem('shirazre_attendance', JSON.stringify(attendance)); }, [attendance]);
-  useEffect(() => { localStorage.setItem('shirazre_leaves', JSON.stringify(leaveRequests)); }, [leaveRequests]);
-  useEffect(() => { localStorage.setItem('shirazre_leave_balances', JSON.stringify(leaveBalances)); }, [leaveBalances]);
-  useEffect(() => { localStorage.setItem('shirazre_salary', JSON.stringify(salaryRecords)); }, [salaryRecords]);
+  useEffect(() => { localStorage.setItem('Shiraz Restaurant_employees', JSON.stringify(employees)); }, [employees]);
+  useEffect(() => { localStorage.setItem('Shiraz Restaurant_attendance', JSON.stringify(attendance)); }, [attendance]);
+  useEffect(() => { localStorage.setItem('Shiraz Restaurant_leaves', JSON.stringify(leaveRequests)); }, [leaveRequests]);
+  useEffect(() => { localStorage.setItem('Shiraz Restaurant_leave_balances', JSON.stringify(leaveBalances)); }, [leaveBalances]);
+  useEffect(() => { localStorage.setItem('Shiraz Restaurant_salary', JSON.stringify(salaryRecords)); }, [salaryRecords]);
 
   const getEmployee = (id: string) => employees.find(e => e.id === id);
 

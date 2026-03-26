@@ -115,7 +115,7 @@ export const menuItems: MenuItem[] = [
   { id: id(), name: 'Fish Chili Dry', price: 1700, category: 'Chinese', image: img('photo-1525755662778-989d0524087e'), description: 'Dry chili fish', available: true, perishable: true, expiryDays: 1 },
 
   // ── RICE ──
-  { id: id(), name: 'Shiraz Special Rice', price: 1050, category: 'Rice', image: img('photo-1603133872878-684f208fb84b'), description: 'Shiraz signature special rice', available: true, perishable: true, expiryDays: 1 },
+  { id: id(), name: 'Shiraz Restaurant Special Rice', price: 1050, category: 'Rice', image: img('photo-1603133872878-684f208fb84b'), description: 'Shiraz Restaurant signature special rice', available: true, perishable: true, expiryDays: 1 },
   { id: id(), name: 'Masala Rice', price: 900, category: 'Rice', image: img('photo-1603133872878-684f208fb84b'), description: 'Spiced masala rice', available: true, perishable: true, expiryDays: 1 },
   { id: id(), name: 'Chicken Fried Rice', price: 900, category: 'Rice', image: img('photo-1603133872878-684f208fb84b'), description: 'Wok-fried rice with chicken', available: true, perishable: true, expiryDays: 1 },
   { id: id(), name: 'Egg Fried Rice', price: 800, category: 'Rice', image: img('photo-1603133872878-684f208fb84b'), description: 'Classic egg fried rice', available: true, perishable: true, expiryDays: 1 },
@@ -130,21 +130,21 @@ export const menuItems: MenuItem[] = [
   { id: id(), name: 'Shami Kabab Special', price: 80, category: 'Rice', image: img('photo-1563379091339-03b21ab4a4f8'), description: 'Special shami kabab', available: true, perishable: true, expiryDays: 1 },
 
   // ── NOODLES ──
-  { id: id(), name: 'Shiraz Special Chowmein', price: 1300, category: 'Noodles', image: img('photo-1603133872878-684f208fb84b'), description: 'Shiraz special chowmein', available: true, perishable: true, expiryDays: 1 },
+  { id: id(), name: 'Shiraz Restaurant Special Chowmein', price: 1300, category: 'Noodles', image: img('photo-1603133872878-684f208fb84b'), description: 'Shiraz Restaurant special chowmein', available: true, perishable: true, expiryDays: 1 },
   { id: id(), name: 'Chicken Chowmein', price: 1200, category: 'Noodles', image: img('photo-1603133872878-684f208fb84b'), description: 'Chicken chowmein noodles', available: true, perishable: true, expiryDays: 1 },
   { id: id(), name: 'Beef Chowmein', price: 1200, category: 'Noodles', image: img('photo-1603133872878-684f208fb84b'), description: 'Beef chowmein noodles', available: true, perishable: true, expiryDays: 1 },
   { id: id(), name: 'Vegetable Chowmein', price: 1000, category: 'Noodles', image: img('photo-1603133872878-684f208fb84b'), description: 'Vegetable chowmein noodles', available: true, perishable: true, expiryDays: 1 },
 
   // ── APPETIZERS ──
-  { id: id(), name: 'Shiraz Special Lemon Chicken', price: 1100, category: 'Appetizers', image: img('photo-1527477396000-e27163b4bfd2'), description: 'Signature lemon chicken', available: true, perishable: true, expiryDays: 1 },
+  { id: id(), name: 'Shiraz Restaurant Special Lemon Chicken', price: 1100, category: 'Appetizers', image: img('photo-1527477396000-e27163b4bfd2'), description: 'Signature lemon chicken', available: true, perishable: true, expiryDays: 1 },
   { id: id(), name: 'Chicken Honey Wings 8PC', price: 850, category: 'Appetizers', image: img('photo-1527477396000-e27163b4bfd2'), description: '8 pieces honey glazed wings', available: true, perishable: true, expiryDays: 1 },
   { id: id(), name: 'Chicken Fried Wings 8PC', price: 700, category: 'Appetizers', image: img('photo-1527477396000-e27163b4bfd2'), description: '8 pieces crispy fried wings', available: true, perishable: true, expiryDays: 1 },
   { id: id(), name: 'Fish Crackers', price: 400, category: 'Appetizers', image: img('photo-1527477396000-e27163b4bfd2'), description: 'Crispy fish crackers', available: true, perishable: false },
   { id: id(), name: 'French Fries', price: 300, category: 'Appetizers', image: img('photo-1573080496219-bb080dd4f877'), description: 'Golden french fries', available: true, perishable: true, expiryDays: 1 },
 
   // ── SOUPS ──
-  { id: id(), name: 'Shiraz Special Soup (Family)', price: 1300, category: 'Soups', image: img('photo-1547592166-23ac45744acd'), description: 'Family size special soup', available: true, perishable: true, expiryDays: 1 },
-  { id: id(), name: 'Shiraz Special Soup (Single)', price: 400, category: 'Soups', image: img('photo-1547592166-23ac45744acd'), description: 'Single serving special soup', available: true, perishable: true, expiryDays: 1 },
+  { id: id(), name: 'Shiraz Restaurant Special Soup (Family)', price: 1300, category: 'Soups', image: img('photo-1547592166-23ac45744acd'), description: 'Family size special soup', available: true, perishable: true, expiryDays: 1 },
+  { id: id(), name: 'Shiraz Restaurant Special Soup (Single)', price: 400, category: 'Soups', image: img('photo-1547592166-23ac45744acd'), description: 'Single serving special soup', available: true, perishable: true, expiryDays: 1 },
   { id: id(), name: 'Hot & Sour Soup (Family)', price: 1150, category: 'Soups', image: img('photo-1547592166-23ac45744acd'), description: 'Family size hot & sour soup', available: true, perishable: true, expiryDays: 1 },
   { id: id(), name: 'Hot & Sour Soup (Single)', price: 400, category: 'Soups', image: img('photo-1547592166-23ac45744acd'), description: 'Single hot & sour soup', available: true, perishable: true, expiryDays: 1 },
   { id: id(), name: 'Chicken Corn Soup (Family)', price: 1100, category: 'Soups', image: img('photo-1547592166-23ac45744acd'), description: 'Family size chicken corn soup', available: true, perishable: true, expiryDays: 1 },

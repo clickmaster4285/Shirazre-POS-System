@@ -53,7 +53,7 @@ export function printReceipt(data: ReceiptData) {
 </head>
 <body>
   <div class="header">
-    <h1>Shiraz</h1>
+    <h1>Shiraz Restaurant</h1>
     <p>Restaurant & Fine Dining</p>
     <p>123 Royal Avenue, Islamabad</p>
     <p>Tel: +92 51 1234567</p>
@@ -91,7 +91,7 @@ export function printReceipt(data: ReceiptData) {
     <p class="thanks">Thank You!</p>
     <p>We hope you enjoyed your dining experience.</p>
     <p>Please visit us again.</p>
-    <p style="margin-top:8px">www.Shiraz.com</p>
+    <p style="margin-top:8px">www.Shiraz Restaurant.com</p>
   </div>
 </body>
 </html>`;
