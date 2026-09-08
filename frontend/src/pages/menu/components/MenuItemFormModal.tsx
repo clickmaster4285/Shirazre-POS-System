@@ -30,6 +30,8 @@ type FormState = {
   name: string;
   price: string;
   category: string;
+  categoryId: string;
+  parentCategoryId: string;
   description: string;
   kitchenRequired: boolean;
   isFavorite: boolean;
@@ -43,6 +45,8 @@ interface MenuItemFormModalProps {
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
   allCategories: string[];
+  categoryTree: Array<{ id: string; name: string; parentId: string | null; isActive: boolean }>;
+  categoryOptions: Array<{ id: string; name: string; parentId: string | null; isActive: boolean }>;
   isBundleCategory: boolean;
   bundleItems: BundleEntry[];
   setBundleItems: React.Dispatch<React.SetStateAction<BundleEntry[]>>;
@@ -88,7 +92,7 @@ interface MenuItemFormModalProps {
 }
 
 export function MenuItemFormModal({
-  showForm, setShowForm, editing, form, setForm, allCategories, isBundleCategory,
+  showForm, setShowForm, editing, form, setForm, allCategories, categoryTree, categoryOptions, isBundleCategory,
   bundleItems, setBundleItems, bundleItemId, setBundleItemId, bundleQty, setBundleQty,
   bundleSourceItems, addBundleItem, selectedRecipeId, setSelectedRecipeId,
   scale, setScale, ingredientOverrides, setIngredientOverrides,
@@ -121,7 +125,6 @@ export function MenuItemFormModal({
     <div className="fixed inset-0 bg-foreground/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div
         className={`bg-card rounded-2xl p-6 w-full ${!isBundleCategory ? 'max-w-5xl' : 'max-w-2xl'} space-y-4`}
-        style={{ boxShadow: 'var(--shadow-elevated)' }}
       >
         <div className="flex justify-between items-center">
           <h3 className="font-serif text-lg font-bold">{editing ? 'Edit Item' : 'New Item'}</h3>
@@ -136,8 +139,17 @@ export function MenuItemFormModal({
               <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">Rs.</span>
               <input className={`${inputClass} pl-12`} placeholder="Price" type="number" step="1" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} />
             </div>
-            <select className={inputClass} value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
-              {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
+            <select className={inputClass} value={form.parentCategoryId} onChange={e => setForm({ ...form, parentCategoryId: e.target.value, categoryId: '', category: '' })}>
+              <option value="">Select parent category</option>
+              {categoryTree.filter(category => category.isActive).map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
+            </select>
+            <select className={inputClass} value={form.categoryId || form.category} onChange={e => {
+              const selected = categoryOptions.find(category => category.id === e.target.value);
+              setForm({ ...form, categoryId: selected?.id || '', category: selected?.name || e.target.value });
+            }}>
+              <option value="">Select subcategory</option>
+              {categoryOptions.filter(category => category.parentId === form.parentCategoryId).map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
+              {allCategories.filter(category => !categoryOptions.some(option => option.name === category)).map(category => <option key={category} value={category}>{category}</option>)}
             </select>
 
             {isBundleCategory && (

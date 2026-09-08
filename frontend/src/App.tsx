@@ -19,6 +19,7 @@ const TableManagement = lazy(() => import("./pages/settings/tables/index.tsx"));
 const KitchenDisplay = lazy(() => import("./pages/kitchen/index.tsx"));
 const Billing = lazy(() => import("./pages/billing/index.tsx"));
 const MenuManagement = lazy(() => import("./pages/menu/index.tsx"));
+const MenuCategories = lazy(() => import("./pages/menu/categories.tsx"));
 const Reports = lazy(() => import("./pages/reports/index.tsx"));
 const PermissionManagement = lazy(() => import("./pages/hr/users/index.tsx"));
 const InventoryManagement = lazy(() => import("./pages/inventory/index.tsx"));
@@ -78,6 +79,8 @@ const App = () => (
                   <Route path="billing" element={<PageGuard page="billing"><Billing /></PageGuard>} />
                   <Route path="staff-bills" element={<PageGuard page="staffbills"><StaffBills /></PageGuard>} />
                   <Route path="menu" element={<PageGuard page="menu"><MenuManagement /></PageGuard>} />
+                  <Route path="menu/categories" element={<PageGuard page="menu"><MenuCategories /></PageGuard>} />
+                  <Route path="menu/categories/:categoryId" element={<PageGuard page="menu"><MenuCategories /></PageGuard>} />
                   <Route path="recipes" element={<PageGuard page="recipes"><RecipesPage /></PageGuard>} />
                   <Route path="reports" element={<PageGuard page="reports"><Reports /></PageGuard>} />
                   <Route path="users" element={<PageGuard page="users"><PermissionManagement /></PageGuard>} />

@@ -19,6 +19,7 @@ type TopSellingItem = {
     quantity: number;
   }>;
 };
+type MenuCategory = { id: string; name: string; parentId: string | null; isActive: boolean; children?: MenuCategory[] };
 
 const formatPKR = (value: number) => `Rs. ${value.toLocaleString()}`;
 
@@ -31,6 +32,8 @@ export default function POSDashboard() {
   const [cashiers, setCashiers] = useState<{ key: string; name: string }[]>([]);
   const [expandBundles, setExpandBundles] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedParentCategory, setSelectedParentCategory] = useState('all');
+  const [selectedChildCategory, setSelectedChildCategory] = useState('all');
 
   const floorsQuery = useQuery({
     queryKey: ['floors-list'],
@@ -46,9 +49,13 @@ export default function POSDashboard() {
 
   const categoriesQuery = useQuery({
     queryKey: ['menu-categories'],
-    queryFn: () => api<{ categories: string[] }>('/menu/categories'),
+    queryFn: () => api<{ categories: string[]; tree: MenuCategory[] }>('/menu/categories'),
   });
   const categories = categoriesQuery.data?.categories ?? [];
+  const categoryTree = categoriesQuery.data?.tree ?? [];
+  const parentCategories = categoryTree.filter(category => !category.parentId && category.isActive);
+  const selectedParent = parentCategories.find(category => category.id === selectedParentCategory);
+  const childCategories = selectedParent?.children?.filter(category => category.isActive) ?? [];
 
   useEffect(() => {
     if (usersQuery.data) {
@@ -127,8 +134,8 @@ export default function POSDashboard() {
       if ((item.category === 'Platters' || item.category === 'Deals') && item.bundleItems?.length) {
         const bundleCount = item.bundleItems.length;
         item.bundleItems.forEach((bi: any) => {
-          const subName = (bi.name && bi.name !== String(bi.menuItem)) 
-            ? bi.name 
+          const subName = (bi.name && bi.name !== String(bi.menuItem))
+            ? bi.name
             : (typeof bi.menuItem === 'object' ? bi.menuItem?.name : bi.menuItem);
           if (!subName) return;
           const subQty = (bi.quantity || 1) * item.sold;
@@ -171,9 +178,18 @@ export default function POSDashboard() {
   }, [expandedTopItems]);
 
   const filteredTopItems = useMemo(() => {
-    if (selectedCategory === 'all') return expandedTopItems;
-    return expandedTopItems.filter(item => (item.category || 'Other') === selectedCategory);
-  }, [expandedTopItems, selectedCategory]);
+    let items = expandedTopItems;
+    if (selectedChildCategory !== 'all') {
+      const child = childCategories.find(category => category.id === selectedChildCategory);
+      items = items.filter(item => (item.category || 'Other') === child?.name);
+    } else if (selectedParentCategory !== 'all') {
+      const childNames = new Set(childCategories.map(category => category.name));
+      items = items.filter(item => childNames.has(item.category || 'Other'));
+    } else if (selectedCategory !== 'all') {
+      items = items.filter(item => (item.category || 'Other') === selectedCategory);
+    }
+    return items;
+  }, [childCategories, expandedTopItems, selectedCategory, selectedChildCategory, selectedParentCategory]);
 
   const { dineIn, delivery, takeaway } = useMemo(
     () => ({
@@ -215,13 +231,13 @@ export default function POSDashboard() {
   return (
     <div className="flex h-[calc(100dvh-7rem)] min-h-0 flex-col gap-4 overflow-hidden lg:h-[calc(100vh-7rem)]">
       <div className="shrink-0">
-         <h1 className="font-serif text-2xl font-bold text-foreground">Dashboard</h1>
-         <p className="text-sm text-muted-foreground">Welcome back. Here's your overview.</p>
+        <h1 className="font-serif text-2xl font-bold text-foreground">Dashboard</h1>
+        <p className="text-sm text-muted-foreground">Welcome back. Here's your overview.</p>
       </div>
 
       <POSFilterBar
         searchQuery=""
-        onSearchChange={() => {}} 
+        onSearchChange={() => { }}
         hideSearch={true}
         floors={floorsData}
         selectedFloor={selectedFloor}
@@ -337,29 +353,30 @@ export default function POSDashboard() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 shrink-0">
               <h3 className="font-semibold text-foreground text-sm">Menu Items Sales</h3>
               <div className="flex items-center gap-2">
-                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                  <SelectTrigger className="w-[140px] h-8 text-xs font-semibold">
-                    <SelectValue placeholder="All Categories" />
+                <Select value={selectedParentCategory} onValueChange={(value) => { setSelectedParentCategory(value); setSelectedChildCategory('all'); }}>
+                  <SelectTrigger className="w-[150px] h-8 text-xs font-semibold">
+                    <SelectValue placeholder="All Parent Categories" />
                   </SelectTrigger>
                   <SelectContent className="rounded-xl border-border shadow-xl max-h-[300px] overflow-y-auto">
-                    <SelectItem value="all" className="text-xs font-medium">All ({expandedTopItems.length})</SelectItem>
-                    {categories.map(cat => {
-                      const stats = categoryStats.find(s => s.name === cat);
-                      return (
-                        <SelectItem key={cat} value={cat} className="text-xs font-medium">
-                          {cat} ({stats?.count ?? 0})
-                        </SelectItem>
-                      );
-                    })}
+                    <SelectItem value="all" className="text-xs font-medium">All parents</SelectItem>
+                    {parentCategories.map(category => <SelectItem key={category.id} value={category.id} className="text-xs font-medium">{category.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
+                {/*  
+                <Select value={selectedChildCategory} onValueChange={setSelectedChildCategory}>
+                  <SelectTrigger className="w-[150px] h-8 text-xs font-semibold"><SelectValue placeholder="All Child Categories" /></SelectTrigger>
+                  <SelectContent className="rounded-xl border-border shadow-xl max-h-[300px] overflow-y-auto">
+                    <SelectItem value="all" className="text-xs font-medium">All children</SelectItem>
+                    {childCategories.map(category => <SelectItem key={category.id} value={category.id} className="text-xs font-medium">{category.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                */}
                 <button
                   onClick={() => setExpandBundles(!expandBundles)}
-                  className={`text-[10px] px-2 py-1 rounded-md border transition-colors ${
-                    expandBundles 
-                      ? 'bg-primary text-white border-primary' 
+                  className={`text-[10px] px-2 py-1 rounded-md border transition-colors ${expandBundles
+                      ? 'bg-primary text-white border-primary'
                       : 'bg-background text-muted-foreground border-border hover:bg-muted'
-                  }`}
+                    }`}
                 >
                   {expandBundles ? 'Bundles Expanded' : 'Expand Bundles'}
                 </button>
@@ -416,15 +433,14 @@ export default function POSDashboard() {
                           <div className="shrink-0 text-right">
                             <p className="text-sm font-semibold text-foreground">Rs. {order.total.toLocaleString()}</p>
                             <span
-                              className={`mt-1 inline-block text-xs font-medium rounded-full px-2 py-0.5 ${
-                                order.status === 'pending'
+                              className={`mt-1 inline-block text-xs font-medium rounded-full px-2 py-0.5 ${order.status === 'pending'
                                   ? 'bg-warning/10 text-warning'
                                   : order.status === 'preparing'
                                     ? 'bg-primary/10 text-primary'
                                     : order.status === 'ready'
                                       ? 'bg-success/10 text-success'
                                       : 'bg-muted text-muted-foreground'
-                              }`}
+                                }`}
                             >
                               {order.status}
                             </span>

@@ -5,6 +5,11 @@ const menuItemSchema = new mongoose.Schema(
     name: String,
     price: Number,
     category: String,
+    categoryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "MenuCategory",
+      default: null,
+    },
     description: String,
     image: String,
     available: { type: Boolean, default: true },

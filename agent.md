@@ -267,3 +267,213 @@ Staff Bills Page Flow:
 6. **Date-wise Grouping**: Bills organized by calendar day for easy review
 7. **Real-time Updates**: Socket.IO broadcasts on all changes, all query keys properly invalidated
 8. **No Duplicate Role**: Avoided creating a "staff" User role — HR Employees already serve this purpose
+
+---
+
+## 7. Menu Category Hierarchy Requirements (Approved)
+
+The menu category system will be changed from a flat category list to a two-level hierarchy:
+
+```text
+Parent Category
+└── Child / Subcategory
+  └── Menu Items
+```
+
+### 7.1 Parent Category Form
+
+The parent category form must contain only the following fields:
+
+- **Name**
+- **Description**
+- **Image**
+- **Active** toggle
+
+No color, sort order, or additional parent-category fields are required at this stage.
+
+### 7.2 Category Pages and Navigation
+
+Categories must have separate pages, not a tab inside the existing menu-management page.
+
+Required route:
+
+```text
+/pos/menu/categories
+```
+
+The categories page must have its own sidebar navigation entry. It must allow users to:
+
+1. View parent categories.
+2. Create and edit parent categories.
+3. Open a parent category and view its child/subcategories.
+4. Create and edit child/subcategories by selecting their parent category.
+5. Open an individual category page and view only its related menu items.
+
+The existing menu-management page remains responsible for menu items, while category navigation and category CRUD live on the separate categories pages.
+
+### 7.3 Child/Subcategory Form
+
+Child/subcategory creation must require selecting a parent category before saving. The form must include:
+
+- Parent category
+- Name
+- Description
+- Image
+- Active toggle
+
+The current flat categories should be migrated or mapped as child/subcategories. The system must not guess new parent assignments where the correct parent is unknown.
+
+### 7.4 Menu Item Category Selection
+
+Menu item creation and editing must use dependent category selectors:
+
+1. Select the main/parent category.
+2. Load the relevant child/subcategories.
+3. Select the child/subcategory.
+4. Fill the remaining menu item fields and save.
+
+Changing the selected parent must clear the selected child/subcategory. Menu items should be assigned to child/subcategories, not directly to parent categories.
+
+The menu item list must show the complete category path where available, for example `Main Course / Karahi`.
+
+### 7.5 Legacy and Unassigned Menu Items
+
+Existing menu items must be preserved during migration. Items whose current category string does not match a known category must remain **Unassigned**.
+
+Unassigned items must:
+
+- Remain visible in the global **All** menu-item view.
+- Be excluded from normal parent/subcategory views until assigned.
+- Be assignable later through the menu item form.
+- Not be deleted or silently moved during migration.
+
+The old category string must remain available during the transition so historical orders and legacy consumers continue to work safely.
+
+### 7.6 POS Terminal
+
+The POS terminal must be updated in the same implementation pass to use the real parent/child category hierarchy.
+
+The hardcoded `Pakistani` / `Handi` / `Karahi` grouping must be removed and replaced with category data from the backend. The POS should:
+
+- Load categories with the menu data.
+- Show parent categories first.
+- Show child/subcategories after selecting a parent.
+- Display items for the selected child/subcategory.
+- Keep unassigned items available through an appropriate All/unassigned view.
+
+### 7.7 Category Deletion Policy
+
+Category deletion must be blocked when the category has children or menu items assigned to it.
+
+The API and UI error must clearly identify the blocking dependency by name. For example:
+
+- `Cannot delete "Main Course" because it has child categories: Karahi, Handi.`
+- `Cannot delete "Karahi" because it has menu items: Chicken Karahi, Mutton Karahi.`
+
+The system must not automatically move children or menu items to Unassigned during deletion. The user must first move or remove the dependent records.
+
+### 7.8 Stable References and Historical Data
+
+New menu items must reference the selected child/subcategory by stable ID rather than relying only on its name. Category names may change without invalidating the relationship.
+
+Existing order records must retain their historical category snapshot. Renaming, moving, or deactivating a category must not rewrite historical orders or reports.
+
+Special `Deals` and `Platters` behavior must not depend only on category-name string comparisons. Bundle behavior should use an explicit item type or equivalent stable flag.
+
+### 7.9 Implementation Scope
+
+The implementation must include:
+
+- Hierarchical category model and indexes.
+- Category list/tree, create, update, and guarded delete APIs.
+- Legacy category migration and Unassigned handling.
+- Separate categories page and sidebar entry.
+- Parent/child category forms.
+- Dependent parent/subcategory selectors in menu item forms.
+- Individual category item views.
+- POS terminal hierarchy integration in the same pass.
+- Clear deletion validation errors naming dependent categories or items.
+- Tests for migration, hierarchy, filtering, assignment, POS navigation, and deletion guards.
+
+---
+
+## 8. Menu Category Work Completed (2026-09-08)
+
+The approved category hierarchy work has been implemented across the backend and frontend.
+
+### 8.1 Backend Completed
+
+- `MenuCategory` now supports `parentId`, description, image, active status, timestamps, and a parent/name index.
+- `MenuItem` now supports a stable `categoryId` reference while retaining the legacy `category` string for compatibility.
+- `GET /menu/categories` now returns:
+  - The legacy flat `categories` string array for existing dashboard/report consumers.
+  - Structured `categoryRecords`.
+  - A nested `tree` of parent categories and subcategories.
+  - `legacy` category names that exist on menu items but have no category record.
+- `POST /menu/categories` supports parent assignment, descriptions, images, and active status.
+- `PUT /menu/categories/:id` supports changing a category's parent, including moving it back to top-level with no parent.
+- `DELETE /menu/categories/:id` blocks deletion when children or menu items exist and names the blocking records in the error response.
+- Only two hierarchy levels are permitted. A subcategory cannot contain another subcategory.
+- Creating a subcategory whose name matches legacy menu items automatically assigns those unassigned items to the new category ID.
+- POS initialization now returns active categories together with menu data.
+
+### 8.2 Category Management UI Completed
+
+- Added separate routes:
+  - `/pos/menu/categories`
+  - `/pos/menu/categories/:categoryId`
+- Added a **Menu Categories** sidebar entry using the existing menu permission.
+- Parent category cards show existing subcategory names and provide **View subcategories**.
+- Parent pages show their child categories and allow creating subcategories.
+- Subcategory pages show their assigned menu items.
+- Existing subcategories have a dedicated **Change parent** action.
+- The category edit form includes a parent selector:
+  - Selecting another parent moves the category.
+  - Selecting **No parent (top-level)** unlinks it.
+- Legacy/unassigned category names are displayed with a parent selector and **Link category** action.
+- Linking a legacy name creates the subcategory and preserves/adopts its existing menu items.
+
+### 8.3 Menu Item UI Completed
+
+- Menu item forms now use dependent selectors:
+  1. Parent category.
+  2. Child category.
+  3. Remaining menu item fields.
+- Changing the selected parent clears the child selection.
+- New items submit `categoryId` and retain the category name for compatibility.
+- Existing items can be assigned or reassigned through the same form.
+
+### 8.4 POS Terminal Completed
+
+- POS terminal loads the real category tree from the backend.
+- The old hardcoded `Pakistani` / `Handi` / `Karahi` navigation path is no longer used for menu filtering.
+- The terminal always shows two selectors:
+  - Parent category
+  - Child category
+- Both initially show `All`.
+- Selecting a parent resets the child selector to `All` and shows items from all of that parent's child categories.
+- Selecting a child filters items to that child category.
+- Selecting `All` at child level returns to the selected parent's aggregate view.
+- The global `All` view continues to include legacy/unassigned items.
+
+### 8.5 Dashboard and Reports Completed
+
+- Dashboard **Menu Items Sales** now has parent and child selectors.
+- Reports **Menu Items Sales** now has parent and child selectors.
+- Both pages start with parent and child set to `All`.
+- Changing the parent resets the child to `All`.
+- Parent selection aggregates historical sales rows whose stored category names belong to that parent's child categories.
+- Child selection filters historical sales to the selected child category.
+- Reports top-item response typing now includes category and bundle fields used by the UI.
+
+### 8.6 Validation Completed
+
+- Backend syntax checks passed for the changed controllers, routes, and models.
+- Focused TypeScript checks passed for the changed category, menu, POS, dashboard, and reports files.
+- Production frontend builds passed after the hierarchy, assignment, POS, dashboard, and reports updates.
+- Live authenticated browser verification was unavailable because the shared server URL redirected to login with a 401 response.
+
+### 8.7 Remaining Follow-Up
+
+- Automated backend/frontend tests for hierarchy migration, assignment, deletion guards, and POS navigation have not yet been added.
+- `Deals` and `Platters` bundle detection still uses legacy category-name checks in existing reporting code; an explicit stable item type remains a future hardening task.

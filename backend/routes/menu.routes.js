@@ -16,7 +16,9 @@ const upload = multer({
 
 const router = express.Router();
 router.get("/categories", authRequired, menuController.categories);
-router.post("/categories", authRequired, menuController.addCategory);
+router.post("/categories", authRequired, upload.single("image"), menuController.addCategory);
+router.put("/categories/:id", authRequired, upload.single("image"), menuController.updateCategory);
+router.delete("/categories/:id", authRequired, menuController.removeCategory);
 router.get("/", authRequired, menuController.list);
 router.post("/", authRequired, upload.single("image"), menuController.create);
 router.put("/:id", authRequired, upload.single("image"), menuController.update);

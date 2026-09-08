@@ -25,7 +25,7 @@ export default function POSScreen() {
   // Connect to Zustand store
   const store = usePOSStore();
   const {
-    menuItems, setMenuItems,
+    menuItems, setMenuItems, setMenuCategories,
     floors, setFloors,
     tables, setTables,
     taxRates, setTaxRates,
@@ -46,15 +46,17 @@ export default function POSScreen() {
     queryFn: () =>
       api<{
         menu: any[];
+        categories: any[];
         floors: any[];
         tables: any[];
-      }>('/init-data?include=menu,floors,tables'),
+      }>('/init-data?include=menu,categories,floors,tables'),
     staleTime: 5 * 60 * 1000,
   });
 
   // Sync Query data to Store
   useEffect(() => {
     if (initDataQuery.data?.menu) setMenuItems(initDataQuery.data.menu);
+    if (initDataQuery.data?.categories) setMenuCategories(initDataQuery.data.categories);
     if (initDataQuery.data?.floors) {
       const fs = initDataQuery.data.floors.map(x => ({ id: x.key, name: x.name }));
       setFloors(fs);
@@ -70,7 +72,7 @@ export default function POSScreen() {
         currentOrder: x.currentOrder,
       })));
     }
-  }, [initDataQuery.data, setMenuItems, setFloors, setTables, setActiveFloorId, activeFloorId]);
+  }, [initDataQuery.data, setMenuItems, setMenuCategories, setFloors, setTables, setActiveFloorId, activeFloorId]);
 
   // Tax and Realtime Logic
   const loadTaxRates = useCallback(() => {
