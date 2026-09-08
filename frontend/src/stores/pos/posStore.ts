@@ -3,9 +3,18 @@ import { type CartItem, type MenuItem, type TableInfo } from '@/data/pos/mockDat
 import { type PakistaniSubfolder } from '@/components/pos/Form';
 import { computePakistanTaxTotals } from '@/utils/pos/pakistanTax';
 
+export interface POSCategory {
+  id: string;
+  name: string;
+  parentId: string | null;
+  isActive: boolean;
+  children?: POSCategory[];
+}
+
 interface POSState {
   // Data
   menuItems: MenuItem[];
+  menuCategories: POSCategory[];
   floors: { id: string; name: string }[];
   tables: TableInfo[];
   taxRates: { gstRate: number; serviceChargeRate: number; takeawayChargeRate: number; minimumOrderAmount: number };
@@ -55,6 +64,7 @@ interface POSState {
 
   // Actions - Data
   setMenuItems: (items: MenuItem[]) => void;
+  setMenuCategories: (categories: POSCategory[]) => void;
   setFloors: (floors: { id: string; name: string }[]) => void;
   setTables: (tables: TableInfo[]) => void;
   setTaxRates: (rates: { gstRate: number; serviceChargeRate: number; takeawayChargeRate: number; minimumOrderAmount: number }) => void;
@@ -117,6 +127,7 @@ interface POSState {
 export const usePOSStore = create<POSState>((set) => ({
   // Data Defaults
   menuItems: [],
+  menuCategories: [],
   floors: [],
   tables: [],
   taxRates: { gstRate: 0.16, serviceChargeRate: 0.05, takeawayChargeRate: 0.05, minimumOrderAmount: 0 },
@@ -160,6 +171,7 @@ export const usePOSStore = create<POSState>((set) => ({
 
   // Basic Setters
   setMenuItems: (menuItems) => set({ menuItems }),
+  setMenuCategories: (menuCategories) => set({ menuCategories }),
   setFloors: (floors) => set({ floors }),
   setTables: (tables) => set({ tables }),
   setTaxRates: (taxRates) => set({ taxRates }),

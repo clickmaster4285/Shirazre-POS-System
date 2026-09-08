@@ -10,10 +10,13 @@ import {
   getSearchSuggestions
 } from '@/utils/searchEngine';
 
+type MenuItemWithCategory = { categoryId?: string };
+
 export function POSMenuArea() {
   const store = usePOSStore();
   const {
     menuItems,
+    menuCategories,
     openFolder, setOpenFolder,
     pakistaniSub, setPakistaniSub,
     folderItemSearch, setFolderItemSearch,
@@ -32,27 +35,33 @@ export function POSMenuArea() {
     return preprocessItems(menuItems, popularityMap);
   }, [menuItems]);
 
-  // Get current category items
-  const getCategoryItems = () => {
-    if (!openFolder || openFolder === 'All') return processedItems;
-    if (openFolder === 'Pakistani') {
-      if (!pakistaniSub) return [];
-      return processedItems.filter(p => p.original.category === pakistaniSub);
-    }
-    return processedItems.filter(p => p.original.category === openFolder);
-  };
+  const parentCategories = menuCategories.filter(category => !category.parentId && category.isActive);
+  const selectedCategory = menuCategories.find(category => category.id === openFolder);
+  const selectedParentCategory = selectedCategory?.parentId
+    ? menuCategories.find(category => category.id === selectedCategory.parentId)
+    : selectedCategory;
+  const childCategories = selectedParentCategory
+    ? (selectedParentCategory.children || menuCategories.filter(category => category.parentId === selectedParentCategory.id && category.isActive))
+    : [];
 
-  const categoryItems = getCategoryItems();
+  // A parent shows all items assigned to its child categories; a child shows only its own items.
+  const categoryItems = useMemo(() => {
+    if (!openFolder || openFolder === 'All') return processedItems;
+    const categoryIds = selectedCategory?.parentId
+      ? [openFolder]
+      : childCategories.map(category => category.id);
+    return processedItems.filter(item => categoryIds.includes(String((item.original as MenuItemWithCategory).categoryId || '')));
+  }, [childCategories, openFolder, processedItems, selectedCategory?.parentId]);
 
   // Search within category
   const searchResults = useMemo(() => {
     const results = searchItems(
       categoryItems,
       debouncedSearch,
-      openFolder === 'All' ? undefined : openFolder
+      openFolder === 'All' ? undefined : selectedCategory?.name || selectedParentCategory?.name
     );
     return results;
-  }, [categoryItems, debouncedSearch, openFolder]);
+  }, [categoryItems, debouncedSearch, openFolder, selectedCategory?.name, selectedParentCategory?.name]);
 
   // Generate suggestions when no results
   useEffect(() => {
@@ -65,11 +74,6 @@ export function POSMenuArea() {
   }, [debouncedSearch, searchResults.length, processedItems]);
 
   // Categories for filter
-  const categories = useMemo(() => {
-    const unique = Array.from(new Set(menuItems.map(i => i.category))).sort();
-    return ['All', ...unique];
-  }, [menuItems]);
-
   useEffect(() => {
     setFolderItemSearch('');
   }, [openFolder, pakistaniSub, setFolderItemSearch]);
@@ -109,16 +113,30 @@ export function POSMenuArea() {
 
         <div className="relative w-full sm:w-44">
           <select
-            value={openFolder || 'All'}
+            aria-label="Parent category"
+            value={selectedParentCategory?.id || 'All'}
             onChange={(e) => {
-              setOpenFolder(e.target.value);
+              setOpenFolder(e.target.value || 'All');
               setPakistaniSub(null);
             }}
             className="w-full bg-background border border-border rounded-lg pl-3 pr-8 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary appearance-none cursor-pointer capitalize"
           >
-            {categories.map(cat => (
-              <option key={cat} value={cat}>{cat}</option>
+            <option value="All">All parent categories</option>
+            {parentCategories.map(category => (
+              <option key={category.id} value={category.id}>{category.name}</option>
             ))}
+          </select>
+          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+        </div>
+        <div className="relative w-full sm:w-52">
+          <select
+            aria-label="Child category"
+            value={selectedCategory?.parentId ? selectedCategory.id : 'All'}
+            onChange={(e) => setOpenFolder(e.target.value === 'All' ? (selectedParentCategory?.id || 'All') : e.target.value)}
+            className="w-full bg-background border border-border rounded-lg pl-3 pr-8 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary appearance-none cursor-pointer"
+          >
+            <option value="All">All child categories</option>
+            {childCategories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
           </select>
           <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
         </div>

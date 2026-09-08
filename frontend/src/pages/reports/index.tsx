@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 const pieColors = ['hsl(340,70%,21%)', 'hsl(340,60%,30%)', 'hsl(15,45%,81%)', 'hsl(40,70%,55%)', 'hsl(15,25%,13%)'];
 const formatPKR = (value: number) => `Rs. ${value.toLocaleString()}`;
+type MenuCategory = { id: string; name: string; parentId: string | null; isActive: boolean; children?: MenuCategory[] };
 
 const hslToRgb = (h: number, s: number, l: number): [number, number, number] => {
   // h: 0..360, s/l: 0..100
@@ -86,6 +87,8 @@ export default function Reports() {
   const [selectedCashier, setSelectedCashier] = useState('all');
   const [cashiers, setCashiers] = useState<{ key: string; name: string }[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedParentCategory, setSelectedParentCategory] = useState('all');
+  const [selectedChildCategory, setSelectedChildCategory] = useState('all');
 
   const usersQuery = useQuery({
     queryKey: ['users-list'],
@@ -94,9 +97,13 @@ export default function Reports() {
 
   const categoriesQuery = useQuery({
     queryKey: ['menu-categories'],
-    queryFn: () => api<{ categories: string[] }>('/menu/categories'),
+    queryFn: () => api<{ categories: string[]; tree: MenuCategory[] }>('/menu/categories'),
   });
   const categories = categoriesQuery.data?.categories ?? [];
+  const categoryTree = categoriesQuery.data?.tree ?? [];
+  const parentCategories = categoryTree.filter(category => !category.parentId && category.isActive);
+  const selectedParent = parentCategories.find(category => category.id === selectedParentCategory);
+  const childCategories = selectedParent?.children?.filter(category => category.isActive) ?? [];
 
   useEffect(() => {
     if (usersQuery.data) {
@@ -124,7 +131,7 @@ export default function Reports() {
       const cashierParam = selectedCashier !== 'all' ? `&orderTaker=${selectedCashier}` : '';
       const [w, t, s, inv] = await Promise.all([
         api<{ items: { day: string; revenue: number }[] }>(`/reports/weekly-sales?from=${startDate}&to=${endDate}${floorParam}${cashierParam}`),
-        api<{ items: { name: string; sold: number; revenue: number }[] }>(`/reports/top-items?from=${startDate}&to=${endDate}${floorParam}${cashierParam}`),
+        api<{ items: { name: string; sold: number; revenue: number; category?: string; description?: string; bundleItems?: { menuItem: string | { name: string }; quantity: number }[] }[] }>(`/reports/top-items?from=${startDate}&to=${endDate}${floorParam}${cashierParam}`),
         api<{
           revenue: number;
           profit: number;
@@ -227,11 +234,17 @@ export default function Reports() {
     let items = parsedTopSellingItems.filter(item =>
       item.name.toLowerCase().includes(menuSearch.toLowerCase())
     );
-    if (selectedCategory !== 'all') {
+    if (selectedChildCategory !== 'all') {
+      const child = childCategories.find(category => category.id === selectedChildCategory);
+      items = items.filter(item => (item.category || 'Other') === child?.name);
+    } else if (selectedParentCategory !== 'all') {
+      const childNames = new Set(childCategories.map(category => category.name));
+      items = items.filter(item => childNames.has(item.category || 'Other'));
+    } else if (selectedCategory !== 'all') {
       items = items.filter(item => (item.category || 'Other') === selectedCategory);
     }
     return items;
-  }, [parsedTopSellingItems, menuSearch, selectedCategory]);
+  }, [childCategories, menuSearch, parsedTopSellingItems, selectedCategory, selectedChildCategory, selectedParentCategory]);
 
   const filteredInventoryUsage = useMemo(() =>
     inventoryUsage.filter(item =>
@@ -658,22 +671,22 @@ export default function Reports() {
               </button>
             </div>
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full md:w-auto">
-              <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                <SelectTrigger className="w-full sm:w-[160px] h-8 text-xs font-semibold">
-                  <SelectValue placeholder="All Categories" />
-                </SelectTrigger>
+              <Select value={selectedParentCategory} onValueChange={(value) => { setSelectedParentCategory(value); setSelectedChildCategory('all'); }}>
+                <SelectTrigger className="w-full sm:w-[160px] h-8 text-xs font-semibold"><SelectValue placeholder="All Parent Categories" /></SelectTrigger>
                 <SelectContent className="rounded-xl border-border shadow-xl max-h-[300px] overflow-y-auto">
-                  <SelectItem value="all" className="text-xs font-medium">All ({parsedTopSellingItems.length})</SelectItem>
-                  {categories.map(cat => {
-                    const stats = categoryStats.find(s => s.name === cat);
-                    return (
-                      <SelectItem key={cat} value={cat} className="text-xs font-medium">
-                        {cat} ({stats?.count ?? 0})
-                      </SelectItem>
-                    );
-                  })}
+                  <SelectItem value="all" className="text-xs font-medium">All parents</SelectItem>
+                  {parentCategories.map(category => <SelectItem key={category.id} value={category.id} className="text-xs font-medium">{category.name}</SelectItem>)}
                 </SelectContent>
               </Select>
+              {/* 
+              <Select value={selectedChildCategory} onValueChange={setSelectedChildCategory}>
+                <SelectTrigger className="w-full sm:w-[160px] h-8 text-xs font-semibold"><SelectValue placeholder="All Child Categories" /></SelectTrigger>
+                <SelectContent className="rounded-xl border-border shadow-xl max-h-[300px] overflow-y-auto">
+                  <SelectItem value="all" className="text-xs font-medium">All children</SelectItem>
+                  {childCategories.map(category => <SelectItem key={category.id} value={category.id} className="text-xs font-medium">{category.name}</SelectItem>)}
+                </SelectContent>
+              </Select> 
+              */}
               <div className="relative w-full sm:w-64">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input

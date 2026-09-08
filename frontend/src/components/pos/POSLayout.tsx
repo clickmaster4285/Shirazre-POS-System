@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { usePOSStore } from '@/stores/pos/posStore';
-import { useAuth, ROLE_LABELS } from '@/contexts/auth/AuthContext';
+import { useAuth, ROLE_LABELS, type PageKey } from '@/contexts/auth/AuthContext';
 import { BrandHeader } from '@/components/branding/BrandHeader';
 import Logo from '@/components/branding/Logo';
 
@@ -44,6 +44,7 @@ const allLinks: { to: string; icon: typeof LayoutDashboard; label: string; page:
   { to: '/pos/billing', icon: Receipt, label: 'Billing', page: 'billing' },
   { to: '/pos/staff-bills', icon: Users, label: 'Staff Bills', page: 'staffbills' },
   { to: '/pos/menu', icon: UtensilsCrossed, label: 'Menu', page: 'menu' },
+  { to: '/pos/menu/categories', icon: UtensilsCrossed, label: 'Menu Categories', page: 'menu' },
   { to: '/pos/recipes', icon: BookOpen, label: 'Recipes', page: 'recipes' },
   { to: '/pos/inventory', icon: Package, label: 'Inventory', page: 'inventory' },
   { to: '/pos/delivery', icon: Truck, label: 'Delivery', page: 'delivery' },

@@ -9,7 +9,16 @@ import { MenuItemFormModal } from './components/MenuItemFormModal';
 import { AddCategoryModal } from './components/AddCategoryModal';
 import { MenuItemsTable } from './components/MenuItemsTable';
 
-type MenuCategoriesResponse = { categories: string[] };
+type MenuCategory = {
+  id: string;
+  name: string;
+  parentId: string | null;
+  description?: string;
+  image?: string;
+  isActive: boolean;
+  children?: MenuCategory[];
+};
+type MenuCategoriesResponse = { categories: string[]; categoryRecords: MenuCategory[]; tree: MenuCategory[]; legacy: string[] };
 type Recipe = {
   id: string;
   name: string;
@@ -52,7 +61,8 @@ export default function MenuManagement() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [categoryFilter, setCategoryFilter] = useState('All');
-  const [categories, setCategories] = useState<string[]>([]);
+  const [categories, setCategories] = useState<MenuCategory[]>([]);
+  const [categoryTree, setCategoryTree] = useState<MenuCategory[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [newCategory, setNewCategory] = useState('');
   const [showCategoryForm, setShowCategoryForm] = useState(false);
@@ -71,7 +81,8 @@ export default function MenuManagement() {
     try {
       setLoadingCategories(true);
       const response = await api<MenuCategoriesResponse>('/menu/categories');
-      setCategories(response.categories);
+      setCategories(response.categoryRecords || []);
+      setCategoryTree(response.tree || []);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to load menu categories');
     } finally {
@@ -139,7 +150,7 @@ export default function MenuManagement() {
 
   const [editing, setEditing] = useState<MenuItem | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: '', price: '', category: 'BBQ', description: '', kitchenRequired: true, image: '', isFavorite: false });
+  const [form, setForm] = useState({ name: '', price: '', category: 'BBQ', categoryId: '', parentCategoryId: '', description: '', kitchenRequired: true, image: '', isFavorite: false });
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null);
   const [scale, setScale] = useState('1');
   const [ingredientOverrides, setIngredientOverrides] = useState<IngredientOverride[]>([]);
@@ -162,7 +173,8 @@ export default function MenuManagement() {
     }
   };
 
-  const allCategories = Array.from(new Set([...categories, ...DEFAULT_SPECIAL_CATEGORIES]));
+  const allCategories = Array.from(new Set([...categories.map(category => category.name), ...DEFAULT_SPECIAL_CATEGORIES]));
+  const childCategories = categories.filter(category => Boolean(category.parentId) && category.isActive);
   const isBundleCategory = form.category === 'Deals' || form.category === 'Platters';
   const bundleSourceItems = useMemo(
     () => allMenuItems.filter(
@@ -236,7 +248,8 @@ export default function MenuManagement() {
     setImagePreviewUrl('');
     const fallbackCategory = allCategories[0] || 'Deals';
     const category = preferredCategory || fallbackCategory;
-    setForm({ name: '', price: '', category, description: '', kitchenRequired: true, image: '', isFavorite: false });
+    const preferred = childCategories.find((item) => item.name === category);
+    setForm({ name: '', price: '', category, categoryId: preferred?.id || '', parentCategoryId: preferred?.parentId || '', description: '', kitchenRequired: true, image: '', isFavorite: false });
     setBundleItems([]);
     setBundleItemId('');
     setBundleQty('1');
@@ -261,6 +274,8 @@ export default function MenuManagement() {
       name: item.name,
       price: item.price.toString(),
       category: item.category,
+      categoryId: (item as MenuItem & { categoryId?: string }).categoryId || '',
+      parentCategoryId: childCategories.find((category) => category.id === (item as MenuItem & { categoryId?: string }).categoryId)?.parentId || '',
       description: item.description,
       kitchenRequired: item.kitchenRequired !== false,
       image: item.image || '',
@@ -433,7 +448,7 @@ export default function MenuManagement() {
   const addCategory = () => {
     const trimmed = newCategory.trim();
     if (!trimmed) { toast.error('Enter a category name'); return; }
-    if (categories.some(c => c.toLowerCase() === trimmed.toLowerCase())) { toast.error('Category already exists'); return; }
+    if (categories.some(c => c.name.toLowerCase() === trimmed.toLowerCase())) { toast.error('Category already exists'); return; }
     api('/menu/categories', { method: 'POST', body: JSON.stringify({ name: trimmed }) }).then(() => {
       toast.success('Category added');
       fetchCategories();
@@ -519,6 +534,8 @@ export default function MenuManagement() {
         form={form}
         setForm={setForm}
         allCategories={allCategories}
+        categoryTree={categoryTree}
+        categoryOptions={childCategories}
         isBundleCategory={isBundleCategory}
         bundleItems={bundleItems}
         setBundleItems={setBundleItems}

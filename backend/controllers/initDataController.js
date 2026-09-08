@@ -1,4 +1,4 @@
-const { MenuItem, Table, Floor, User } = require("../models");
+const { MenuItem, MenuCategory, Table, Floor, User } = require("../models");
 
 const parseInclude = (value) => {
   if (!value) return new Set(["menu", "tables", "floors", "users"]);
@@ -21,6 +21,15 @@ exports.getInitData = async (req, res) => {
         .sort({ isFavorite: -1, createdAt: -1 })
         .lean()
         .then((items) => ["menu", items.map((i) => ({ ...i, id: String(i._id) }))])
+    );
+  }
+
+  if (include.has("categories")) {
+    jobs.push(
+      MenuCategory.find({ isActive: true })
+        .sort({ parentId: 1, name: 1 })
+        .lean()
+        .then((categories) => ["categories", categories.map((category) => ({ ...category, id: String(category._id) }))])
     );
   }
 

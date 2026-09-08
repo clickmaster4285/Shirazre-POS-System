@@ -14,6 +14,7 @@ const pageToRoute: Record<PageKey, string> = {
   tables: '/pos/tables',
   kitchen: '/pos/kitchen',
   billing: '/pos/billing',
+  expenses: '/pos/expenses',
   menu: '/pos/menu',
   recipes: '/pos/recipes',
   reports: '/pos/reports',
@@ -30,6 +31,7 @@ const pageToRoute: Record<PageKey, string> = {
   payment: '/pos/payment',
   mobileapp: '/pos/mobile-app',
   outdoordelivery: '/pos/outdoor-delivery-report',
+  staffbills: '/pos/staff-bills',
 };
 
 const allPages: PageKey[] = [
