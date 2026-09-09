@@ -65,6 +65,8 @@ export default function POSScreen() {
     if (initDataQuery.data?.tables) {
       setTables(initDataQuery.data.tables.map(x => ({
         id: x.number,
+        mongoId: x.id,
+        number: x.number,
         name: x.name,
         seats: x.seats,
         floorId: x.floorKey,
@@ -94,9 +96,9 @@ export default function POSScreen() {
   // URL Parameter Handling
   useEffect(() => {
     const tableParam = searchParams.get('table');
-    const tableId = tableParam ? Number(tableParam) : null;
-    if (tableId && tables.some(t => t.id === tableId)) {
-      setSelectedTableId(tableId);
+    const table = tables.find(t => t.mongoId === tableParam || String(t.id) === tableParam);
+    if (table) {
+      setSelectedTableId(table.id);
       setOrderType('dine-in');
     }
   }, [searchParams, tables, setSelectedTableId, setOrderType]);
@@ -108,7 +110,7 @@ export default function POSScreen() {
       if (table?.status === 'occupied') {
         // Only load if we're not already editing this specific order
         if (!currentOrderForEdit || currentOrderForEdit.id !== table.currentOrder) {
-          api<{ item: any }>(`/orders/open-by-table/${table.name}`)
+          api<{ item: any }>(`/orders/open-by-table/${table.mongoId}`)
             .then(res => {
               if (res.item) {
                 // If we were editing another order, we should probably clear those items
@@ -171,6 +173,7 @@ export default function POSScreen() {
       const orderPayload = {
         type: orderType,
         table: orderType === 'dine-in' && selectedTable ? selectedTable.name : undefined,
+        tableId: orderType === 'dine-in' && selectedTable ? selectedTable.mongoId : undefined,
         status: 'pending',
         customerName: orderType === 'delivery' ? deliveryCustomerName.trim() : undefined,
         phone: orderType === 'delivery' ? deliveryPhone.trim() : undefined,
@@ -189,7 +192,7 @@ export default function POSScreen() {
           await api(`/orders/${currentOrderForEdit.dbId}/edit-items`, { method: 'PATCH', body: JSON.stringify(orderPayload) });
           return 'updated';
         }
-        const existing = await api<{ item: { dbId: string } | null }>(`/orders/open-by-table/${selectedTable.name}`);
+        const existing = await api<{ item: { dbId: string } | null }>(`/orders/open-by-table/${selectedTable.mongoId}`);
         if (existing.item?.dbId) {
           await api(`/orders/${existing.item.dbId}/add-items`, { method: 'PATCH', body: JSON.stringify(orderPayload) });
           return 'updated';

@@ -1,13 +1,49 @@
 const { parsePagination, buildPaginatedResponse } = require("../utils/pagination");
 const { emitPosChange } = require("../utils/realtime");
-const { Table } = require("../models");
+const { Table, Order } = require("../models");
+
+const ACTIVE_ORDER_STATUSES = ["pending", "preparing", "ready", "served"];
+
+const reconcileTableState = async (rows) => {
+  const names = rows.map((table) => table.name).filter(Boolean);
+  if (!names.length) return rows;
+
+  const activeOrders = await Order.find({
+    type: "dine-in",
+    $or: [{ tableId: { $in: rows.map((table) => table._id) } }, { table: { $in: names } }],
+    status: { $in: ACTIVE_ORDER_STATUSES },
+  }).select("code table tableId createdAt").sort({ createdAt: -1 }).lean();
+
+  const activeByTable = new Map();
+  activeOrders.forEach((order) => {
+    const key = order.tableId ? String(order.tableId) : `name:${order.table}`;
+    if (!activeByTable.has(key)) activeByTable.set(key, order);
+  });
+
+  return Promise.all(rows.map(async (table) => {
+    const activeOrder = activeByTable.get(String(table._id)) || activeByTable.get(`name:${table.name}`);
+    if (activeOrder) {
+      if (table.status !== "occupied" || table.currentOrder !== activeOrder.code) {
+        table.status = "occupied";
+        table.currentOrder = activeOrder.code;
+        await Table.updateOne({ _id: table._id }, { $set: { status: "occupied", currentOrder: activeOrder.code } });
+      }
+    } else if (table.status === "occupied" && table.currentOrder) {
+      table.status = "available";
+      table.currentOrder = "";
+      await Table.updateOne({ _id: table._id }, { $set: { status: "available", currentOrder: "" } });
+    }
+    return table;
+  }));
+};
 
 exports.list = async (req, res) => {
   const { page, limit, skip } = parsePagination(req.query);
-  const [rows, total] = await Promise.all([
+  const [rawRows, total] = await Promise.all([
     Table.find({}).sort({ number: 1 }).skip(skip).limit(limit).lean(),
     Table.countDocuments({}),
   ]);
+  const rows = await reconcileTableState(rawRows);
   res.json(
     buildPaginatedResponse({
       items: rows.map((t) => ({

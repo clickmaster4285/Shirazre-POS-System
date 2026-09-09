@@ -1,4 +1,4 @@
-const { MenuItem, MenuCategory, Table, Floor, User } = require("../models");
+const { MenuItem, MenuCategory, Table, Floor, User, Order } = require("../models");
 
 const parseInclude = (value) => {
   if (!value) return new Set(["menu", "tables", "floors", "users"]);
@@ -38,7 +38,12 @@ exports.getInitData = async (req, res) => {
       Table.find({})
         .sort({ number: 1 })
         .lean()
-        .then((rows) => [
+        .then(async (rows) => {
+          const names = rows.map((table) => table.name).filter(Boolean);
+          const activeOrders = await Order.find({ type: "dine-in", $or: [{ tableId: { $in: rows.map((table) => table._id) } }, { table: { $in: names } }], status: { $in: ["pending", "preparing", "ready", "served"] } }).select("code table tableId createdAt").sort({ createdAt: -1 }).lean();
+          const activeByTable = new Map();
+          activeOrders.forEach((order) => { const key = order.tableId ? String(order.tableId) : `name:${order.table}`; if (!activeByTable.has(key)) activeByTable.set(key, order); });
+          return [
           "tables",
           rows.map((t) => ({
             id: String(t._id),
@@ -46,10 +51,11 @@ exports.getInitData = async (req, res) => {
             name: t.name,
             seats: t.seats,
             floorKey: t.floorKey,
-            status: t.status,
-            currentOrder: t.currentOrder || "",
+            status: activeByTable.has(String(t._id)) || activeByTable.has(`name:${t.name}`) ? "occupied" : (t.status === "occupied" ? "available" : t.status),
+            currentOrder: activeByTable.get(String(t._id))?.code || activeByTable.get(`name:${t.name}`)?.code || "",
           })),
-        ])
+          ];
+        })
     );
   }
 

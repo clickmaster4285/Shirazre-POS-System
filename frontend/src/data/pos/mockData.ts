@@ -28,6 +28,7 @@ export interface Order {
   type: 'dine-in' | 'takeaway' | 'delivery';
   status: 'pending' | 'preparing' | 'ready' | 'served' | 'taken away' | 'completed' | 'cancelled';
   table?: number;
+  tableId?: string;
   total: number;
   tax: number;
   subtotal: number;
@@ -59,6 +60,8 @@ export interface FloorInfo {
 
 export interface TableInfo {
   id: number;
+  mongoId: string;
+  number: number;
   name: string;
   seats: number;
   floorId: string;
