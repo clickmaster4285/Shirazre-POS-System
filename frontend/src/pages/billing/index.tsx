@@ -158,6 +158,8 @@ export default function Billing() {
       setFloors(floorsList.map((k: any) => ({ key: k, name: k })));
       setTables(r.items.map((t: any) => ({
         id: t.number,
+        mongoId: t.id,
+        number: t.number,
         name: t.name,
         seats: t.seats,
         floorId: t.floorKey,
@@ -202,10 +204,9 @@ export default function Billing() {
   });
 
   const tableMap = useMemo(() => {
-    const map = new Map<string | number, TableInfo>();
+    const map = new Map<number, TableInfo>();
     tables.forEach(t => {
       map.set(t.id, t);
-      map.set(t.name, t);
     });
     return map;
   }, [tables]);

@@ -6,6 +6,7 @@ const orderSchema = new mongoose.Schema(
     type: { type: String, enum: ["dine-in", "takeaway", "delivery"], required: true },
     status: { type: String, enum: ["pending", "preparing", "ready", "served", "taken away", "completed", "cancelled"], required: true },
     table: String,
+    tableId: { type: mongoose.Schema.Types.ObjectId, ref: "Table", default: null, index: true },
     customerName: String,
     phone: String,
     deliveryAddress: String,

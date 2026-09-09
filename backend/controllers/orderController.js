@@ -2,10 +2,23 @@ const { parsePagination, buildPaginatedResponse } = require("../utils/pagination
 const { getEffectiveTaxRates, calculateGrandTotal } = require("../utils/orderTotals");
 const { emitPosChange } = require("../utils/realtime");
 const { deductInventoryForOrder } = require("../utils/inventoryDeduction");
+const mongoose = require("mongoose");
 const { Order, Table, Delivery } = require("../models");
 const Fuse = require("fuse.js");
 
 const broadcastOrderDomain = () => emitPosChange(["orders", "tables", "deliveries", "dashboard"]);
+
+const resolveTable = async (tableId, tableName) => {
+  if (tableId && mongoose.Types.ObjectId.isValid(tableId)) {
+    const byId = await Table.findById(tableId);
+    if (byId) return byId;
+  }
+  return tableName ? Table.findOne({ name: tableName }) : null;
+};
+
+const tableMatch = (order) => order.tableId
+  ? { _id: order.tableId }
+  : { name: order.table };
 
 const applyInventoryDeduction = async (order, userId) => {
   if (!order || order.inventoryDeducted) return false;
@@ -160,6 +173,7 @@ exports.list = async (req, res) => {
           type: o.type,
           status: o.status,
           table: o.table,
+          tableId: o.tableId ? String(o.tableId) : null,
           items: o.items || [],
           total: isPaid && Number.isFinite(o.total) ? Number(o.total) : totals.grandTotal,
           subtotal: totals.subtotal,
@@ -217,10 +231,10 @@ exports.patchStatus = async (req, res) => {
       const activeStatuses = ["pending", "preparing", "ready", "served"];
       if (activeStatuses.includes(newStatus) && order.type === "dine-in" && order.table) {
         // Try to re-occupy the table if it's currently free
-        const targetTable = await Table.findOne({ name: order.table });
+        const targetTable = await resolveTable(order.tableId, order.table);
         if (targetTable && (targetTable.status === "available" || targetTable.currentOrder === order.code)) {
           await Table.findOneAndUpdate(
-            { name: order.table }, 
+            { _id: targetTable._id },
             { status: "occupied", currentOrder: order.code }
           );
         }
@@ -238,7 +252,7 @@ exports.patchStatus = async (req, res) => {
     // Safety: if status is changed to cancelled via patch, free the table
     if (newStatus === "cancelled" && order.type === "dine-in" && order.table) {
       await Table.findOneAndUpdate(
-        { name: order.table, currentOrder: order.code }, 
+        { ...tableMatch(order), currentOrder: order.code }, 
         { status: "available", currentOrder: "" }
       );
     }
@@ -254,7 +268,8 @@ exports.patchStatus = async (req, res) => {
 exports.changeTable = async (req, res) => {
   try {
     const newTableName = req.body.table;
-    if (!newTableName) {
+    const newTableId = req.body.tableId;
+    if (!newTableName && !newTableId) {
       return res.status(400).json({ message: "Provide a valid table name." });
     }
 
@@ -272,7 +287,7 @@ exports.changeTable = async (req, res) => {
       return res.json({ ok: true, table: newTableName });
     }
 
-    const targetTable = await Table.findOne({ name: newTableName });
+    const targetTable = await resolveTable(newTableId, newTableName);
     if (!targetTable) {
       return res.status(404).json({ message: "Target table not found." });
     }
@@ -280,15 +295,16 @@ exports.changeTable = async (req, res) => {
       return res.status(400).json({ message: "Target table is currently occupied." });
     }
 
-    if (currentTableName) {
+    if (currentTableName || order.tableId) {
       await Table.findOneAndUpdate(
-        { name: currentTableName, currentOrder: order.code },
+        { ...tableMatch(order), currentOrder: order.code },
         { status: "available", currentOrder: "" }
       );
     }
 
-    await Table.findOneAndUpdate({ name: newTableName }, { status: "occupied", currentOrder: order.code });
-    order.table = newTableName;
+    await Table.findOneAndUpdate({ _id: targetTable._id }, { status: "occupied", currentOrder: order.code });
+    order.table = targetTable.name;
+    order.tableId = targetTable._id;
     await order.save();
 
     broadcastOrderDomain();
@@ -303,9 +319,13 @@ exports.create = async (req, res) => {
   try {
     const payload = req.body || {};
 
-    if (payload.type === "dine-in" && payload.table) {
+    const selectedTable = payload.type === "dine-in" ? await resolveTable(payload.tableId, payload.table) : null;
+    if (payload.type === "dine-in" && !selectedTable) {
+      return res.status(404).json({ message: "Selected table not found." });
+    }
+    if (payload.type === "dine-in" && selectedTable) {
       const existingOrder = await Order.findOne({
-        table: payload.table,
+        $or: [{ tableId: selectedTable._id }, { table: selectedTable.name }],
         type: "dine-in",
         status: { $nin: ["completed", "cancelled"] },
       });
@@ -325,7 +345,8 @@ exports.create = async (req, res) => {
       code,
       type: payload.type || "dine-in",
       status: payload.status || "pending",
-      table: payload.table,
+      table: selectedTable?.name || payload.table,
+      tableId: selectedTable?._id || null,
       customerName: payload.customerName || "",
       phone: payload.phone || "",
       deliveryAddress: payload.deliveryAddress || "",
@@ -344,9 +365,9 @@ exports.create = async (req, res) => {
       items,
     });
     
-    if (payload.type === "dine-in" && payload.table) {
+    if (payload.type === "dine-in" && selectedTable) {
       const tableUpdateResult = await Table.findOneAndUpdate(
-        { name: payload.table },
+        { _id: selectedTable._id },
         { status: "occupied", currentOrder: code },
         { new: true }
       );
@@ -389,10 +410,10 @@ exports.openByTable = async (req, res) => {
     const includeCompleted = String(req.query.includeCompleted || "") === "true";
     
     // We try to find by table field which now stores name
-    const where = {
-      table: tableIdentifier,
-      type: "dine-in",
-    };
+    const tableQuery = mongoose.Types.ObjectId.isValid(tableIdentifier)
+      ? { tableId: tableIdentifier }
+      : { table: tableIdentifier };
+    const where = { ...tableQuery, type: "dine-in" };
     if (!includeCompleted) {
       where.status = { $nin: ["completed", "cancelled"] };
     }
@@ -414,6 +435,7 @@ exports.openByTable = async (req, res) => {
         type: row.type,
         status: row.status,
         table: row.table,
+        tableId: row.tableId ? String(row.tableId) : null,
         items: row.items || [],
         subtotal: totals.subtotal,
         tax: totals.tax,
@@ -472,6 +494,7 @@ exports.addItems = async (req, res) => {
     row.total = totals.grandTotal;
     row.notes = req.body.notes ?? row.notes;
     row.table = req.body.table ?? row.table;
+    if (req.body.tableId && mongoose.Types.ObjectId.isValid(req.body.tableId)) row.tableId = req.body.tableId;
     row.status = "pending";
     if (!row.orderTaker || row.orderTaker === "Unknown") {
       row.orderTaker = req.user.name || req.user.email || "Unknown";
@@ -480,8 +503,11 @@ exports.addItems = async (req, res) => {
     if (row.type === "delivery") {
       await Delivery.findOneAndUpdate({ orderId: row.code }, { total: totals.grandTotal });
     }
+    if (row.type === "dine-in" && row.table) {
+      await Table.findOneAndUpdate(tableMatch(row), { status: "occupied", currentOrder: row.code });
+    }
     if (wasCompleted && row.type === "dine-in" && row.table) {
-      await Table.findOneAndUpdate({ name: row.table }, { status: "occupied", currentOrder: row.code });
+      await Table.findOneAndUpdate(tableMatch(row), { status: "occupied", currentOrder: row.code });
     }
     broadcastOrderDomain();
     res.json({ ok: true, id: row.code, dbId: String(row._id) });
@@ -529,12 +555,16 @@ exports.editItems = async (req, res) => {
     row.total = totals.grandTotal;
     row.notes = req.body.notes ?? row.notes;
     row.table = req.body.table ?? row.table;
+    if (req.body.tableId && mongoose.Types.ObjectId.isValid(req.body.tableId)) row.tableId = req.body.tableId;
     if (!row.orderTaker || row.orderTaker === "Unknown") {
       row.orderTaker = req.user.name || req.user.email || "Unknown";
     }
     await row.save();
     if (row.type === "delivery") {
       await Delivery.findOneAndUpdate({ orderId: row.code }, { total: totals.grandTotal });
+    }
+    if (row.type === "dine-in" && row.table) {
+      await Table.findOneAndUpdate(tableMatch(row), { status: "occupied", currentOrder: row.code });
     }
     broadcastOrderDomain();
     res.json({ ok: true, id: row.code, dbId: String(row._id) });
@@ -597,7 +627,7 @@ exports.payment = async (req, res) => {
 
     // For dine-in orders, make table available after payment (no auto-creation of new order)
     if (row.type === "dine-in" && row.table) {
-      await Table.findOneAndUpdate({ name: row.table }, { status: "available", currentOrder: "" });
+      await Table.findOneAndUpdate(tableMatch(row), { status: "available", currentOrder: "" });
     }
 
     broadcastOrderDomain();
@@ -618,7 +648,7 @@ exports.cancel = async (req, res) => {
     row.status = "cancelled";
     await row.save();
     if (row.type === "dine-in" && row.table) {
-      await Table.findOneAndUpdate({ name: row.table }, { status: "available", currentOrder: "" });
+      await Table.findOneAndUpdate(tableMatch(row), { status: "available", currentOrder: "" });
     }
     broadcastOrderDomain();
     res.json({ ok: true });
@@ -630,7 +660,7 @@ exports.cancel = async (req, res) => {
 
 exports.switchType = async (req, res) => {
   try {
-    const { type, table, customerName, phone, deliveryAddress } = req.body;
+    const { type, table, tableId, customerName, phone, deliveryAddress } = req.body;
     if (!type) return res.status(400).json({ message: "Provide a valid order type." });
 
     const order = await Order.findById(req.params.id);
@@ -646,7 +676,7 @@ exports.switchType = async (req, res) => {
     if (oldType === "dine-in" && oldTable) {
       if (type !== "dine-in" || (type === "dine-in" && table && table !== oldTable)) {
         await Table.findOneAndUpdate(
-          { name: oldTable, currentOrder: order.code },
+          { ...tableMatch(order), currentOrder: order.code },
           { status: "available", currentOrder: "" }
         );
         if (type !== "dine-in") order.table = "";
@@ -657,14 +687,17 @@ exports.switchType = async (req, res) => {
     if (type === "dine-in") {
       if (!table) return res.status(400).json({ message: "Provide a table for dine-in order." });
       
-      const targetTable = await Table.findOne({ name: table });
+      const targetTable = await resolveTable(tableId, table);
       if (!targetTable) return res.status(404).json({ message: "Target table not found." });
       if (targetTable.status === "occupied" && targetTable.currentOrder !== order.code) {
         return res.status(400).json({ message: "Target table is currently occupied." });
       }
 
-      await Table.findOneAndUpdate({ name: table }, { status: "occupied", currentOrder: order.code });
-      order.table = table;
+      await Table.findOneAndUpdate({ _id: targetTable._id }, { status: "occupied", currentOrder: order.code });
+      order.table = targetTable.name;
+      order.tableId = targetTable._id;
+    } else {
+      order.tableId = null;
     }
 
     // 3. Update type and recalculate totals (service charges etc)
@@ -734,7 +767,7 @@ exports.remove = async (req, res) => {
     if (!row) return res.status(404).json({ message: "Order not found" });
 
     if (row.type === "dine-in" && row.table) {
-      await Table.findOneAndUpdate({ name: row.table }, { status: "available", currentOrder: "" });
+      await Table.findOneAndUpdate(tableMatch(row), { status: "available", currentOrder: "" });
     }
 
     await Order.findByIdAndDelete(req.params.id);

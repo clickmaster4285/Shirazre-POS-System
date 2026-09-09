@@ -66,6 +66,8 @@ export default function OrderManagement() {
       setCashiers(initDataQuery.data.users.map(u => ({ key: u.name, name: u.name })));
       setTables(initDataQuery.data.tables.map(t => ({
         id: t.number,
+        mongoId: t.id,
+        number: t.number,
         name: t.name,
         seats: t.seats,
         floorId: t.floorKey,

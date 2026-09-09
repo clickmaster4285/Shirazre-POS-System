@@ -32,7 +32,7 @@ export function SwitchTypeDialog({ tables, floors, onSuccess }: SwitchTypeDialog
       
       if (switchingTypeOrder.type === 'dine-in') {
         const currentTable = tables.find(t => 
-          t.name === switchingTypeOrder.table || t.id === Number(switchingTypeOrder.table)
+          t.mongoId === switchingTypeOrder.tableId || t.name === switchingTypeOrder.table || t.id === Number(switchingTypeOrder.table)
         );
         setSelectedTableId(currentTable ? currentTable.id : null);
         if (currentTable) {
@@ -60,6 +60,7 @@ export function SwitchTypeDialog({ tables, floors, onSuccess }: SwitchTypeDialog
       }
       const table = tables.find(t => t.id === selectedTableId);
       payload.table = table?.name;
+      payload.tableId = table?.mongoId;
       
       // If it was already dine-in and the table name is the same, check if anything actually changed
       if (switchingTypeOrder.type === 'dine-in' && payload.table === switchingTypeOrder.table) {

@@ -410,7 +410,8 @@ export const BillPaymentPanel: React.FC<BillPaymentPanelProps> = ({
   const performSwitchType = async (
     newType: 'dine-in' | 'takeaway' | 'delivery',
     tableName?: string,
-    deliveryFields?: { customerName: string; phone: string; deliveryAddress: string }
+    deliveryFields?: { customerName: string; phone: string; deliveryAddress: string },
+    tableId?: string
   ) => {
     if (!order?.dbId) return;
     
@@ -420,6 +421,7 @@ export const BillPaymentPanel: React.FC<BillPaymentPanelProps> = ({
         body: JSON.stringify({
           type: newType,
           table: tableName,
+          tableId,
           customerName: deliveryFields?.customerName,
           phone: deliveryFields?.phone,
           deliveryAddress: deliveryFields?.deliveryAddress,
@@ -1002,7 +1004,7 @@ export const BillPaymentPanel: React.FC<BillPaymentPanelProps> = ({
                 selectedTableId={null}
                 onTableSelect={(id) => {
                   const t = posStore.tables.find(x => x.id === id);
-                  if (t) void performSwitchType('dine-in', t.name);
+                  if (t) void performSwitchType('dine-in', t.name, undefined, t.mongoId);
                 }}
                 activeFloorId={posStore.activeFloorId}
                 setActiveFloorId={posStore.setActiveFloorId}

@@ -74,7 +74,7 @@ export default function TableManagement() {
       api<PaginatedResponse<{ id: string; number: number; name: string; seats: number; floorKey: string; status: TableInfo['status']; currentOrder?: string }>>(`/tables?page=1&limit=${MAX_LIST_LIMIT}`),
     ]).then(([f, t]) => {
       if (f.items.length) setFloorsState(f.items.map(x => ({ id: x.key, name: x.name })));
-      if (t.items.length) setTablesState(t.items.map(x => ({ id: x.number, name: x.name, seats: x.seats, floorId: x.floorKey, status: x.status, currentOrder: x.currentOrder })));
+      if (t.items.length) setTablesState(t.items.map(x => ({ id: x.number, mongoId: x.id, number: x.number, name: x.name, seats: x.seats, floorId: x.floorKey, status: x.status, currentOrder: x.currentOrder })));
     }), []);
 
   useEffect(() => {

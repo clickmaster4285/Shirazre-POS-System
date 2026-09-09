@@ -34,11 +34,13 @@ export default function KitchenDisplay() {
   };
 
   const fetchTables = () =>
-    api<PaginatedResponse<{ number: number; name: string; seats: number; floorKey: string; status: TableInfo['status']; currentOrder?: string }>>(
+    api<PaginatedResponse<{ id: string; number: number; name: string; seats: number; floorKey: string; status: TableInfo['status']; currentOrder?: string }>>(
       `/tables?page=1&limit=${MAX_LIST_LIMIT}`
     ).then(r => {
       setTables(r.items.map(table => ({
         id: table.number,
+        mongoId: table.id,
+        number: table.number,
         name: table.name,
         seats: table.seats,
         floorId: table.floorKey,
