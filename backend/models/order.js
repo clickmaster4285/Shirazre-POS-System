@@ -71,5 +71,17 @@ orderSchema.index({ table: 1, status: 1, createdAt: -1 });
 orderSchema.index({ type: 1, status: 1, createdAt: -1 });
 orderSchema.index({ staffMember: 1 });
 orderSchema.index({ staffMember: 1, staffBillPaid: 1 });
+orderSchema.index(
+  { tableId: 1 },
+  {
+    name: "active_dine_in_table_unique",
+    unique: true,
+    partialFilterExpression: {
+      type: "dine-in",
+      tableId: { $type: "objectId" },
+      status: { $in: ["pending", "preparing", "ready", "served"] },
+    },
+  }
+);
 
 module.exports = mongoose.model("Order", orderSchema);
