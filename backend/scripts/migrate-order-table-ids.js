@@ -1,3 +1,5 @@
+const mongoose = require("mongoose");
+
 require("../config/db").connectDb().then(async () => {
   const { Order, Table } = require("../models");
   const dryRun = process.argv.includes("--dry-run");
@@ -19,7 +21,9 @@ require("../config/db").connectDb().then(async () => {
 
   console.log(JSON.stringify({ dryRun, scanned: orders.length, migrated, unmatched }, null, 2));
   process.exitCode = unmatched.length ? 2 : 0;
+  await mongoose.disconnect();
 }).catch((error) => {
   console.error(error);
   process.exitCode = 1;
+  void mongoose.disconnect();
 });

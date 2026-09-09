@@ -8,12 +8,30 @@ const Fuse = require("fuse.js");
 
 const broadcastOrderDomain = () => emitPosChange(["orders", "tables", "deliveries", "dashboard"]);
 
-const resolveTable = async (tableId, tableName) => {
+const runTransaction = async (work) => {
+  const session = await mongoose.startSession();
+  try {
+    let result;
+    await session.withTransaction(async () => {
+      result = await work(session);
+    });
+    return result;
+  } finally {
+    await session.endSession();
+  }
+};
+
+const resolveTable = async (tableId, tableName, session) => {
   if (tableId && mongoose.Types.ObjectId.isValid(tableId)) {
-    const byId = await Table.findById(tableId);
+    const query = Table.findById(tableId);
+    if (session) query.session(session);
+    const byId = await query;
     if (byId) return byId;
   }
-  return tableName ? Table.findOne({ name: tableName }) : null;
+  if (!tableName) return null;
+  const query = Table.findOne({ name: tableName });
+  if (session) query.session(session);
+  return query;
 };
 
 const tableMatch = (order) => order.tableId
@@ -282,104 +300,95 @@ exports.changeTable = async (req, res) => {
       return res.status(400).json({ message: "Cannot switch table for a completed or cancelled order." });
     }
 
-    const currentTableName = order.table;
-    if (currentTableName === newTableName) {
-      return res.json({ ok: true, table: newTableName });
-    }
-
-    const targetTable = await resolveTable(newTableId, newTableName);
-    if (!targetTable) {
-      return res.status(404).json({ message: "Target table not found." });
-    }
-    if (targetTable.status === "occupied" && targetTable.currentOrder !== order.code) {
-      return res.status(400).json({ message: "Target table is currently occupied." });
-    }
-
-    if (currentTableName || order.tableId) {
-      await Table.findOneAndUpdate(
-        { ...tableMatch(order), currentOrder: order.code },
-        { status: "available", currentOrder: "" }
-      );
-    }
-
-    await Table.findOneAndUpdate({ _id: targetTable._id }, { status: "occupied", currentOrder: order.code });
-    order.table = targetTable.name;
-    order.tableId = targetTable._id;
-    await order.save();
+    const result = await runTransaction(async (session) => {
+      const transactionalOrder = await Order.findById(req.params.id).session(session);
+      const targetTable = await resolveTable(newTableId, newTableName, session);
+      if (!targetTable) {
+        const error = new Error("Target table not found.");
+        error.statusCode = 404;
+        throw error;
+      }
+      if (targetTable.status === "occupied" && targetTable.currentOrder !== transactionalOrder.code) {
+        const error = new Error("Target table is currently occupied.");
+        error.statusCode = 400;
+        throw error;
+      }
+      if (transactionalOrder.tableId || transactionalOrder.table) {
+        await Table.updateOne({ ...tableMatch(transactionalOrder), currentOrder: transactionalOrder.code }, { $set: { status: "available", currentOrder: "" } }, { session });
+      }
+      await Table.updateOne({ _id: targetTable._id }, { $set: { status: "occupied", currentOrder: transactionalOrder.code } }, { session });
+      transactionalOrder.table = targetTable.name;
+      transactionalOrder.tableId = targetTable._id;
+      await transactionalOrder.save({ session });
+      return transactionalOrder;
+    });
 
     broadcastOrderDomain();
-    res.json({ ok: true, table: newTableName });
+    res.json({ ok: true, table: result.table, tableId: String(result.tableId) });
   } catch (error) {
     console.error("Change table error:", error);
-    res.status(500).json({ message: error.message || "Failed to change table" });
+    res.status(error.statusCode || 500).json({ message: error.message || "Failed to change table" });
   }
 };
 
 exports.create = async (req, res) => {
   try {
     const payload = req.body || {};
-
-    const selectedTable = payload.type === "dine-in" ? await resolveTable(payload.tableId, payload.table) : null;
-    if (payload.type === "dine-in" && !selectedTable) {
-      return res.status(404).json({ message: "Selected table not found." });
-    }
-    if (payload.type === "dine-in" && selectedTable) {
-      const existingOrder = await Order.findOne({
-        $or: [{ tableId: selectedTable._id }, { table: selectedTable.name }],
-        type: "dine-in",
-        status: { $nin: ["completed", "cancelled"] },
-      });
-      if (existingOrder) {
-        return res.status(400).json({ message: "This table already has an active order. Complete payment before creating a new order." });
+    const result = await runTransaction(async (session) => {
+      const selectedTable = payload.type === "dine-in" ? await resolveTable(payload.tableId, payload.table) : null;
+      if (payload.type === "dine-in" && !selectedTable) {
+        const error = new Error("Selected table not found.");
+        error.statusCode = 404;
+        throw error;
       }
-    }
-
-    const code = payload.code || `ORD-${Date.now().toString().slice(-6)}`;
-    const createdAt = new Date();
-    const requestId = `${code}-R1`;
-    const items = stampItemsForKitchen(payload.items, requestId, createdAt);
-    const rates = await getEffectiveTaxRates();
-    const takeawayChargeEnabled = payload.takeawayChargeEnabled !== false;
-    const totals = calculateGrandTotal(items, payload.tax, payload.discount, payload.gstEnabled ?? true, rates, payload.type || "dine-in", takeawayChargeEnabled);
-    const row = await Order.create({
-      code,
-      type: payload.type || "dine-in",
-      status: payload.status || "pending",
-      table: selectedTable?.name || payload.table,
-      tableId: selectedTable?._id || null,
-      customerName: payload.customerName || "",
-      phone: payload.phone || "",
-      deliveryAddress: payload.deliveryAddress || "",
-      orderTaker: req.user.name || req.user.email || "Unknown",
-      notes: payload.notes || "",
-      subtotal: totals.subtotal,
-      tax: totals.tax,
-      discount: totals.discount,
-      gstAmount: totals.gstAmount,
-      serviceCharge: totals.serviceCharge,
-      gstEnabled: payload.gstEnabled ?? true,
-      takeawayChargeEnabled,
-      paymentMethod: payload.paymentMethod || "cash",
-      total: totals.grandTotal,
-      advanceAmount: Number(payload.advanceAmount || 0),
-      items,
-    });
-    
-    if (payload.type === "dine-in" && selectedTable) {
-      const tableUpdateResult = await Table.findOneAndUpdate(
-        { _id: selectedTable._id },
-        { status: "occupied", currentOrder: code },
-        { new: true }
-      );
-      if (!tableUpdateResult) {
-        await Order.findByIdAndDelete(row._id);
-        return res.status(404).json({ message: "Table not found. Order cancelled." });
+      if (selectedTable) {
+        const existingOrder = await Order.findOne({
+          $or: [{ tableId: selectedTable._id }, { table: selectedTable.name }],
+          type: "dine-in",
+          status: { $in: ["pending", "preparing", "ready", "served"] },
+        }).session(session);
+        if (existingOrder) {
+          const error = new Error("This table already has an active order. Complete payment before creating a new order.");
+          error.statusCode = 400;
+          throw error;
+        }
       }
-    }
 
-    if (payload.type === "delivery") {
-      try {
-        await Delivery.create({
+      const code = payload.code || `ORD-${Date.now().toString().slice(-6)}`;
+      const createdAt = new Date();
+      const items = stampItemsForKitchen(payload.items, `${code}-R1`, createdAt);
+      const rates = await getEffectiveTaxRates();
+      const takeawayChargeEnabled = payload.takeawayChargeEnabled !== false;
+      const totals = calculateGrandTotal(items, payload.tax, payload.discount, payload.gstEnabled ?? true, rates, payload.type || "dine-in", takeawayChargeEnabled);
+      const [row] = await Order.create([{
+        code,
+        type: payload.type || "dine-in",
+        status: payload.status || "pending",
+        table: selectedTable?.name || payload.table,
+        tableId: selectedTable?._id || null,
+        customerName: payload.customerName || "",
+        phone: payload.phone || "",
+        deliveryAddress: payload.deliveryAddress || "",
+        orderTaker: req.user.name || req.user.email || "Unknown",
+        notes: payload.notes || "",
+        subtotal: totals.subtotal,
+        tax: totals.tax,
+        discount: totals.discount,
+        gstAmount: totals.gstAmount,
+        serviceCharge: totals.serviceCharge,
+        gstEnabled: payload.gstEnabled ?? true,
+        takeawayChargeEnabled,
+        paymentMethod: payload.paymentMethod || "cash",
+        total: totals.grandTotal,
+        advanceAmount: Number(payload.advanceAmount || 0),
+        items,
+      }], { session });
+
+      if (selectedTable) {
+        await Table.updateOne({ _id: selectedTable._id }, { $set: { status: "occupied", currentOrder: code } }, { session });
+      }
+      if (payload.type === "delivery") {
+        await Delivery.create([{
           orderId: code,
           customerName: payload.customerName || "",
           phone: payload.phone || "",
@@ -389,18 +398,15 @@ exports.create = async (req, res) => {
           status: "pending",
           assignedRider: payload.assignedRider || "",
           estimatedTime: payload.estimatedTime || "30 mins",
-        });
-      } catch (deliveryError) {
-        console.error("Delivery creation failed:", deliveryError);
-        return res.status(400).json({ message: "Failed to create delivery record for this order." });
+        }], { session });
       }
-    }
-
+      return row;
+    });
     broadcastOrderDomain();
-    res.status(201).json({ id: row.code, dbId: String(row._id) });
+    res.status(201).json({ id: result.code, dbId: String(result._id) });
   } catch (error) {
     console.error("Order creation error:", error);
-    res.status(500).json({ message: error.message || "Failed to create order" });
+    res.status(error.statusCode || 500).json({ message: error.message || "Failed to create order" });
   }
 };
 
@@ -600,61 +606,63 @@ exports.patchBillingTotals = async (req, res) => {
 
 exports.payment = async (req, res) => {
   try {
-    const row = await Order.findById(req.params.id);
-    if (!row) return res.status(404).json({ message: "Order not found" });
-
-    const patch = { status: "completed", paymentMethod: req.body.paymentMethod || "cash" };
-    applyBillingFieldsFromBody(req.body, patch);
-
-    // If order has a staff member, mark staff bill as paid too
-    if (row.staffMember) {
-      patch.staffBillPaid = true;
-    }
-
-    // Explicitly set cashierName if provided
-    if (req.user) {
-      patch.cashierName = req.user.name || req.user.email;
-    }
-
-    Object.assign(row, patch);
-
+    const row = await runTransaction(async (session) => {
+      const transactionalRow = await Order.findById(req.params.id).session(session);
+      if (!transactionalRow) {
+        const error = new Error("Order not found");
+        error.statusCode = 404;
+        throw error;
+      }
+      const patch = { status: "completed", paymentMethod: req.body.paymentMethod || "cash" };
+      applyBillingFieldsFromBody(req.body, patch);
+      if (transactionalRow.staffMember) patch.staffBillPaid = true;
+      if (req.user) patch.cashierName = req.user.name || req.user.email;
+      Object.assign(transactionalRow, patch);
+      await transactionalRow.save({ session });
+      if (transactionalRow.type === "delivery" && transactionalRow.code) {
+        await Delivery.updateOne({ orderId: transactionalRow.code }, { $set: { total: Number(transactionalRow.total || 0) } }, { session });
+      }
+      if (transactionalRow.type === "dine-in" && transactionalRow.table) {
+        await Table.updateOne({ ...tableMatch(transactionalRow), currentOrder: transactionalRow.code }, { $set: { status: "available", currentOrder: "" } }, { session });
+      }
+      return transactionalRow;
+    });
     await applyInventoryDeduction(row, req.user?._id);
     await row.save();
-
-    if (row.type === "delivery" && row.code) {
-      await Delivery.findOneAndUpdate({ orderId: row.code }, { total: Number(row.total || 0) });
-    }
-
-    // For dine-in orders, make table available after payment (no auto-creation of new order)
-    if (row.type === "dine-in" && row.table) {
-      await Table.findOneAndUpdate(tableMatch(row), { status: "available", currentOrder: "" });
-    }
 
     broadcastOrderDomain();
     res.json({ ok: true });
   } catch (error) {
     console.error("Payment error:", error);
-    res.status(500).json({ message: error.message || "Failed to process payment" });
+    res.status(error.statusCode || 500).json({ message: error.message || "Failed to process payment" });
   }
 };
 
 exports.cancel = async (req, res) => {
   try {
-    const row = await Order.findById(req.params.id);
-    if (!row) return res.status(404).json({ message: "Order not found" });
-    if (row.status === "completed") {
-      return res.status(400).json({ message: "Cannot cancel a completed/paid order" });
-    }
-    row.status = "cancelled";
-    await row.save();
-    if (row.type === "dine-in" && row.table) {
-      await Table.findOneAndUpdate(tableMatch(row), { status: "available", currentOrder: "" });
-    }
+    await runTransaction(async (session) => {
+      const row = await Order.findById(req.params.id).session(session);
+      if (!row) {
+        const error = new Error("Order not found");
+        error.statusCode = 404;
+        throw error;
+      }
+      if (row.status === "completed") {
+        const error = new Error("Cannot cancel a completed/paid order");
+        error.statusCode = 400;
+        throw error;
+      }
+      row.status = "cancelled";
+      await row.save({ session });
+      if (row.type === "dine-in" && row.table) {
+        await Table.updateOne({ ...tableMatch(row), currentOrder: row.code }, { $set: { status: "available", currentOrder: "" } }, { session });
+      }
+    });
     broadcastOrderDomain();
     res.json({ ok: true });
   } catch (error) {
     console.error("Cancel order error:", error);
-    res.status(500).json({ message: error.message || "Failed to cancel order" });
+    res.status(error.statusCode || 500).json({ message: error.message || "Failed to cancel order" });
   }
 };
 
@@ -663,119 +671,99 @@ exports.switchType = async (req, res) => {
     const { type, table, tableId, customerName, phone, deliveryAddress } = req.body;
     if (!type) return res.status(400).json({ message: "Provide a valid order type." });
 
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ message: "Order not found" });
-    if (order.status === "completed" || order.status === "cancelled") {
-      return res.status(400).json({ message: "Cannot switch type for a completed or cancelled order." });
-    }
-
-    const oldType = order.type;
-    const oldTable = order.table;
-
-    // 1. Handle table release if switching AWAY from dine-in OR changing table within dine-in
-    if (oldType === "dine-in" && oldTable) {
-      if (type !== "dine-in" || (type === "dine-in" && table && table !== oldTable)) {
-        await Table.findOneAndUpdate(
-          { ...tableMatch(order), currentOrder: order.code },
-          { status: "available", currentOrder: "" }
-        );
-        if (type !== "dine-in") order.table = "";
+    const order = await runTransaction(async (session) => {
+      const transactionalOrder = await Order.findById(req.params.id).session(session);
+      if (!transactionalOrder) {
+        const error = new Error("Order not found");
+        error.statusCode = 404;
+        throw error;
       }
-    }
-
-    // 2. Handle table assignment if switching TO dine-in
-    if (type === "dine-in") {
-      if (!table) return res.status(400).json({ message: "Provide a table for dine-in order." });
-      
-      const targetTable = await resolveTable(tableId, table);
-      if (!targetTable) return res.status(404).json({ message: "Target table not found." });
-      if (targetTable.status === "occupied" && targetTable.currentOrder !== order.code) {
-        return res.status(400).json({ message: "Target table is currently occupied." });
+      if (transactionalOrder.status === "completed" || transactionalOrder.status === "cancelled") {
+        const error = new Error("Cannot switch type for a completed or cancelled order.");
+        error.statusCode = 400;
+        throw error;
       }
-
-      await Table.findOneAndUpdate({ _id: targetTable._id }, { status: "occupied", currentOrder: order.code });
-      order.table = targetTable.name;
-      order.tableId = targetTable._id;
-    } else {
-      order.tableId = null;
-    }
-
-    // 3. Update type and recalculate totals (service charges etc)
-    order.type = type;
-    if (type === "delivery") {
-      if (customerName !== undefined) order.customerName = String(customerName || "").trim();
-      if (phone !== undefined) order.phone = String(phone || "").trim();
-      if (deliveryAddress !== undefined) order.deliveryAddress = String(deliveryAddress || "").trim();
-    } else {
-      order.phone = "";
-      order.deliveryAddress = "";
-    }
-    const rates = await getEffectiveTaxRates();
-    const totals = calculateGrandTotal(
-      order.items || [],
-      order.tax,
-      order.discount,
-      order.gstEnabled,
-      rates,
-      type,
-      order.takeawayChargeEnabled !== false
-    );
-
-    order.subtotal = totals.subtotal;
-    order.tax = totals.tax;
-    order.discount = totals.discount;
-    order.gstAmount = totals.gstAmount;
-    order.serviceCharge = totals.serviceCharge;
-    order.total = totals.grandTotal;
-
-    await order.save();
-
-    if (type === "delivery") {
-      const deliveryPayload = {
-        customerName: order.customerName || "",
-        phone: order.phone || "",
-        address: order.deliveryAddress || "",
-        items: Array.isArray(order.items) ? order.items.map((item) => item.menuItem?.name || "Unknown") : [],
-        total: Number(order.total || 0),
-      };
-      const existingDelivery = await Delivery.findOne({ orderId: order.code });
-      if (existingDelivery) {
-        await Delivery.findByIdAndUpdate(existingDelivery._id, deliveryPayload);
+      if (transactionalOrder.type === "dine-in" && transactionalOrder.table && type !== "dine-in") {
+        await Table.updateOne({ ...tableMatch(transactionalOrder), currentOrder: transactionalOrder.code }, { $set: { status: "available", currentOrder: "" } }, { session });
+      }
+      if (type === "dine-in") {
+        if (!table && !tableId) {
+          const error = new Error("Provide a table for dine-in order.");
+          error.statusCode = 400;
+          throw error;
+        }
+        const targetTable = await resolveTable(tableId, table, session);
+        if (!targetTable) {
+          const error = new Error("Target table not found.");
+          error.statusCode = 404;
+          throw error;
+        }
+        if (targetTable.status === "occupied" && targetTable.currentOrder !== transactionalOrder.code) {
+          const error = new Error("Target table is currently occupied.");
+          error.statusCode = 400;
+          throw error;
+        }
+        await Table.updateOne({ _id: targetTable._id }, { $set: { status: "occupied", currentOrder: transactionalOrder.code } }, { session });
+        transactionalOrder.table = targetTable.name;
+        transactionalOrder.tableId = targetTable._id;
       } else {
-        await Delivery.create({
-          orderId: order.code,
-          ...deliveryPayload,
-          status: "pending",
-          estimatedTime: "30 mins",
-        });
+        transactionalOrder.table = "";
+        transactionalOrder.tableId = null;
       }
-    } else {
-      await Delivery.deleteOne({ orderId: order.code });
-    }
+      transactionalOrder.type = type;
+      if (type === "delivery") {
+        if (customerName !== undefined) transactionalOrder.customerName = String(customerName || "").trim();
+        if (phone !== undefined) transactionalOrder.phone = String(phone || "").trim();
+        if (deliveryAddress !== undefined) transactionalOrder.deliveryAddress = String(deliveryAddress || "").trim();
+      } else {
+        transactionalOrder.phone = "";
+        transactionalOrder.deliveryAddress = "";
+      }
+      const rates = await getEffectiveTaxRates();
+      const totals = calculateGrandTotal(transactionalOrder.items || [], transactionalOrder.tax, transactionalOrder.discount, transactionalOrder.gstEnabled, rates, type, transactionalOrder.takeawayChargeEnabled !== false);
+      transactionalOrder.subtotal = totals.subtotal;
+      transactionalOrder.tax = totals.tax;
+      transactionalOrder.discount = totals.discount;
+      transactionalOrder.gstAmount = totals.gstAmount;
+      transactionalOrder.serviceCharge = totals.serviceCharge;
+      transactionalOrder.total = totals.grandTotal;
+      await transactionalOrder.save({ session });
+      if (type === "delivery") {
+        const deliveryPayload = { customerName: transactionalOrder.customerName || "", phone: transactionalOrder.phone || "", address: transactionalOrder.deliveryAddress || "", items: (transactionalOrder.items || []).map((item) => item.menuItem?.name || "Unknown"), total: Number(transactionalOrder.total || 0) };
+        await Delivery.updateOne({ orderId: transactionalOrder.code }, { $set: deliveryPayload, $setOnInsert: { status: "pending", estimatedTime: "30 mins" } }, { upsert: true, session });
+      } else {
+        await Delivery.deleteOne({ orderId: transactionalOrder.code }, { session });
+      }
+      return transactionalOrder;
+    });
 
     broadcastOrderDomain();
-    res.json({ ok: true, type: order.type, table: order.table, total: order.total });
+    res.json({ ok: true, type: order.type, table: order.table, tableId: order.tableId ? String(order.tableId) : null, total: order.total });
   } catch (error) {
     console.error("Switch type error:", error);
-    res.status(500).json({ message: error.message || "Failed to switch order type" });
+    res.status(error.statusCode || 500).json({ message: error.message || "Failed to switch order type" });
   }
 };
 
 exports.remove = async (req, res) => {
   try {
-    const row = await Order.findById(req.params.id);
-    if (!row) return res.status(404).json({ message: "Order not found" });
-
-    if (row.type === "dine-in" && row.table) {
-      await Table.findOneAndUpdate(tableMatch(row), { status: "available", currentOrder: "" });
-    }
-
-    await Order.findByIdAndDelete(req.params.id);
+    await runTransaction(async (session) => {
+      const row = await Order.findById(req.params.id).session(session);
+      if (!row) {
+        const error = new Error("Order not found");
+        error.statusCode = 404;
+        throw error;
+      }
+      if (row.type === "dine-in" && row.table) {
+        await Table.updateOne({ ...tableMatch(row), currentOrder: row.code }, { $set: { status: "available", currentOrder: "" } }, { session });
+      }
+      await Order.deleteOne({ _id: row._id }, { session });
+    });
     broadcastOrderDomain();
     res.json({ ok: true });
   } catch (error) {
     console.error("Remove order error:", error);
-    res.status(500).json({ message: error.message || "Failed to remove order" });
+    res.status(error.statusCode || 500).json({ message: error.message || "Failed to remove order" });
   }
 };
 

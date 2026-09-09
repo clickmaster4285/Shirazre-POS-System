@@ -477,3 +477,69 @@ The approved category hierarchy work has been implemented across the backend and
 
 - Automated backend/frontend tests for hierarchy migration, assignment, deletion guards, and POS navigation have not yet been added.
 - `Deals` and `Platters` bundle detection still uses legacy category-name checks in existing reporting code; an explicit stable item type remains a future hardening task.
+
+---
+
+## 9. Order/Table Consistency Hardening (2026-09-09)
+
+MongoDB transaction support has been added for the order and table lifecycle. The production MongoDB deployment is a replica set (`rs0`), so transactions are supported.
+
+### 9.1 Transaction Boundary
+
+The backend now uses a shared Mongoose transaction helper. Socket.IO notifications are emitted only after the transaction commits successfully.
+
+This prevents clients from receiving a refresh event while the order and table records are only partially updated.
+
+Transactions now cover:
+
+- New order creation plus table occupation.
+- Table reassignment.
+- Switching between dine-in, takeaway, and delivery.
+- Payment completion plus table release.
+- Order cancellation plus table release.
+- Order deletion plus table release.
+
+If an order write or its related table/delivery write fails inside one of these boundaries, MongoDB rolls the transaction back.
+
+### 9.2 Active Table Protection
+
+`Order` now has a partial unique index on `tableId` for active dine-in statuses:
+
+```text
+pending, preparing, ready, served
+```
+
+This prevents two active orders from claiming the same table concurrently at the database level. Completed and cancelled orders do not block the table.
+
+### 9.3 Realtime Ordering
+
+The required sequence is now:
+
+```text
+Start transaction
+  Write order
+  Write table/delivery records
+Commit transaction
+Broadcast Socket.IO event
+```
+
+Socket.IO remains a notification and cache-refresh mechanism. MongoDB remains the source of truth.
+
+### 9.4 Inventory Boundary
+
+Payment completion commits the order status and table release transaction first. Inventory deduction then runs through the existing guarded inventory utility. This remains a separate boundary because the inventory utility has its own inventory/log writes and has not yet been made session-aware.
+
+The order's `inventoryDeducted` guard prevents duplicate deductions. Making inventory deduction part of the same transaction is a future hardening task requiring session support throughout `inventoryDeduction.js`.
+
+### 9.5 Operational Requirements
+
+- MongoDB must run as a replica set or sharded cluster; standalone MongoDB does not support these transactions.
+- Restart the backend after deployment so the transaction code and schema index are active.
+- Existing order migration completed successfully: 8,045 scanned, 8,045 migrated, 0 unmatched.
+- The active-table unique index may be created by Mongoose on startup. Existing duplicate active table claims must be resolved before index creation can succeed.
+- Realtime clients should still invalidate/refetch after committed order and table events; they must never be treated as the persistence mechanism.
+
+### 9.6 Validation
+
+- Backend syntax checks passed for the transaction-enabled order controller and order model.
+- Production frontend build passed.
