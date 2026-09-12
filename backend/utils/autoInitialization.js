@@ -188,52 +188,33 @@ async function initializeSuperAdminPermission() {
 }
 
 async function initializeUsers() {
-  const users = [
-    {
-      role: "superadmin",
-      name: "Super Admin",
-      email: "superadmin@gmail.com",
-      password: "super123",
-      avatar: "",
-    },
-    {
-      role: "hassaan",
-      name: "Hassaan",
-      email: "hassaan@gmail.com",
-      password: "hassaan123",
-      avatar: "",
-    },
-    {
-      role: "fahad",
-      name: "Fahad",
-      email: "fahad@gmail.com",
-      password: "fahad123",
-      avatar: "",
-    },
-    {
-      role: "cashier",
-      name: "Cashier",
-      email: "cashier@gmail.com",
-      password: "cashier123",
-      avatar: "",
-    },
-  ];
+  const email = String(process.env.SUPERADMIN_EMAIL || "")
+    .trim()
+    .toLowerCase();
+  const password = process.env.SUPERADMIN_PASSWORD || "";
+  const name = process.env.SUPERADMIN_NAME || "Super Admin";
 
-  for (const userConfig of users) {
-    const existingUser = await User.findOne({ email: userConfig.email });
-    if (existingUser) continue;
-
-    const passwordHash = await bcrypt.hash(userConfig.password, 10);
-    await User.create({
-      name: userConfig.name,
-      email: userConfig.email,
-      passwordHash,
-      role: userConfig.role,
-      avatar: userConfig.avatar,
-    });
-
-    console.log(`✓ ${userConfig.role} user initialized (email: ${userConfig.email}, password: ${userConfig.password})`);
+  if (!email || !password) {
+    console.warn(
+      "⚠ SUPERADMIN_EMAIL / SUPERADMIN_PASSWORD not set in .env — skipping user initialization."
+    );
+    return;
   }
+
+  // Remove all existing login users. The only account is the superadmin
+  // defined in .env. (Seeded/default users are intentionally not created.)
+  const removed = await User.deleteMany({});
+  if (removed.deletedCount > 0) {
+    console.log(`✓ Removed ${removed.deletedCount} existing user(s)`);
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  await User.findOneAndUpdate(
+    { email },
+    { name, email, passwordHash, role: "superadmin", avatar: "" },
+    { upsert: true, new: true }
+  );
+  console.log(`✓ Super Admin initialized from .env (${email})`);
 }
 
 async function runAutoInitialization() {

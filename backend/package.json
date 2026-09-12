@@ -7,7 +7,8 @@
     "dev": "nodemon server.js",
     "start": "node server.js",
     "seed": "node utils/testDataSeeder.js",
-    "migrate:order-table-ids": "node scripts/migrate-order-table-ids.js"
+    "migrate:order-table-ids": "node scripts/migrate-order-table-ids.js",
+    "reset:superadmin": "node scripts/reset-superadmin-users.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
