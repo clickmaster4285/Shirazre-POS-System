@@ -8,6 +8,43 @@ const Fuse = require("fuse.js");
 
 const broadcastOrderDomain = () => emitPosChange(["orders", "tables", "deliveries", "dashboard"]);
 
+const isSuperAdminUser = (req) => req.isSuperAdmin || (req.user && req.user.role === "superadmin");
+
+const canAction = (req, action) => {
+  if (isSuperAdminUser(req)) return true;
+  const perms = req.currentPermissions;
+  return !!(perms && Array.isArray(perms.actionPermissions) && perms.actionPermissions.includes(action));
+};
+
+const getDiscountLimit = (req) => {
+  if (isSuperAdminUser(req)) return 100;
+  const perms = req.currentPermissions;
+  return Number(perms && perms.discountLimit) || 0;
+};
+
+const canAccessStaffBills = (req) => {
+  if (isSuperAdminUser(req)) return true;
+  const perms = req.currentPermissions;
+  return !!(perms && Array.isArray(perms.pageAccess) && perms.pageAccess.includes("staffbills"));
+};
+
+const checkDiscountChangeError = (req, existing, body) => {
+  if (body.discount === undefined || body.discount === null || body.discount === "") return null;
+  const incoming = Math.max(0, Number(body.discount) || 0);
+  const current = Math.max(0, Number(existing.discount) || 0);
+  if (incoming <= current) return null;
+  if (!canAction(req, "apply_discount")) {
+    return { statusCode: 403, message: "You do not have permission to apply discounts." };
+  }
+  const limit = getDiscountLimit(req);
+  const subtotal = Math.max(0, Number(body.subtotal !== undefined ? body.subtotal : existing.subtotal) || 0);
+  const maxDiscount = subtotal * (limit / 100);
+  if (incoming > maxDiscount) {
+    return { statusCode: 400, message: `Discount exceeds your role limit of ${limit}% (maximum Rs. ${Math.round(maxDiscount)}).` };
+  }
+  return null;
+};
+
 const runTransaction = async (work) => {
   const session = await mongoose.startSession();
   try {
@@ -232,7 +269,7 @@ exports.patchStatus = async (req, res) => {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ message: "Order not found" });
 
-    const isSuperAdmin = req.user && req.user.role === "superadmin";
+    const isSuperAdmin = isSuperAdminUser(req);
 
     // Restriction on completing order via patch (must go through payment)
     if (newStatus === "completed" && !isSuperAdmin) {
@@ -241,8 +278,8 @@ exports.patchStatus = async (req, res) => {
 
     // Special logic for reverting status or modifying completed/cancelled orders
     if ((order.status === "completed" || order.status === "cancelled") && newStatus !== order.status) {
-      if (!isSuperAdmin) {
-        return res.status(403).json({ message: "Only superadmin can modify a completed or cancelled order." });
+      if (!canAction(req, "revert_order")) {
+        return res.status(403).json({ message: "You do not have permission to revise a completed or cancelled order." });
       }
 
       // If reverting to an active status, handle table re-occupation
@@ -587,6 +624,10 @@ exports.patchBillingTotals = async (req, res) => {
     if (existing.status === "completed") {
       return res.status(400).json({ message: "Cannot update billing on a paid order" });
     }
+    const discountError = checkDiscountChangeError(req, existing, req.body);
+    if (discountError) {
+      return res.status(discountError.statusCode).json({ message: discountError.message });
+    }
     const patch = {};
     applyBillingFieldsFromBody(req.body, patch);
     if (Object.keys(patch).length === 0) {
@@ -614,6 +655,12 @@ exports.payment = async (req, res) => {
         throw error;
       }
       const patch = { status: "completed", paymentMethod: req.body.paymentMethod || "cash" };
+      const discountError = checkDiscountChangeError(req, transactionalRow, req.body);
+      if (discountError) {
+        const error = new Error(discountError.message);
+        error.statusCode = discountError.statusCode;
+        throw error;
+      }
       applyBillingFieldsFromBody(req.body, patch);
       if (transactionalRow.staffMember) patch.staffBillPaid = true;
       if (req.user) patch.cashierName = req.user.name || req.user.email;
@@ -747,6 +794,9 @@ exports.switchType = async (req, res) => {
 
 exports.remove = async (req, res) => {
   try {
+    if (!canAction(req, "delete_order")) {
+      return res.status(403).json({ message: "You do not have permission to delete orders." });
+    }
     await runTransaction(async (session) => {
       const row = await Order.findById(req.params.id).session(session);
       if (!row) {
@@ -883,6 +933,9 @@ exports.staffBills = async (req, res) => {
 exports.markStaffPaid = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!canAccessStaffBills(req)) {
+      return res.status(403).json({ message: "You do not have permission to manage staff bills." });
+    }
 
     const order = await Order.findById(id);
     if (!order) return res.status(404).json({ message: "Order not found" });

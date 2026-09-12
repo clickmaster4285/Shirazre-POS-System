@@ -90,6 +90,15 @@ export default function OrderManagement() {
     onError: () => toast.error('Failed to update status')
   });
 
+  const deleteOrderMutation = useMutation({
+    mutationFn: (id: string) => api(`/orders/${id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders-management'] });
+      toast.success('Order deleted permanently');
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Failed to delete order')
+  });
+
   usePosRealtimeScopes(['orders', 'tables'], () => refetch());
 
   const handleUpdateStatus = (id: string, status: string) => {
@@ -180,6 +189,7 @@ export default function OrderManagement() {
                 key={order.dbId}
                 order={order}
                 onUpdateStatus={handleUpdateStatus}
+                onDeleteOrder={(id) => deleteOrderMutation.mutateAsync(id)}
                 tables={tables}
               />
             ))}

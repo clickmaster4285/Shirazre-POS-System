@@ -1,9 +1,13 @@
 const express = require("express");
-const { authRequired } = require("../middleware/middleware");
+const { authRequired, attachPermissions } = require("../middleware/middleware");
 const permissionController = require("../controllers/permissionController");
 
 const router = express.Router();
-router.get("/", authRequired, permissionController.getAll);
-router.put("/", authRequired, permissionController.putAll);
+router.use(authRequired, attachPermissions);
+
+router.get("/", permissionController.getAll);
+router.put("/", permissionController.putAll);
+router.post("/roles", permissionController.createRole);
+router.delete("/roles/:role", permissionController.deleteRole);
 
 module.exports = router;

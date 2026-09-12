@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAuth, ROLE_LABELS, type Role, type PageKey, type ActionKey, type DataKey, type PermissionsConfig, type RolePermissions } from '@/contexts/auth/AuthContext';
+import { useAuth, type Role, type PageKey, type ActionKey, type DataKey, type PermissionsConfig, type RolePermissions } from '@/contexts/auth/AuthContext';
 import { Shield, User, Plus, Trash2, X, Save, Check, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -26,11 +26,14 @@ const ALL_PAGES: { key: PageKey; label: string }[] = [
   { key: 'tax', label: 'Tax details' },
   { key: 'mobileapp', label: 'Mobile app' },
   { key: 'outdoordelivery', label: 'Outdoor delivery report' },
+  { key: 'staffbills', label: 'Staff Bills' },
 ];
 
 const ALL_ACTIONS: { key: ActionKey; label: string }[] = [
   { key: 'apply_discount', label: 'Apply Discounts' },
   { key: 'void_order', label: 'Void / Cancel Orders' },
+  { key: 'delete_order', label: 'Delete Orders (permanent)' },
+  { key: 'revert_order', label: 'Revert Completed/Cancelled Orders' },
   { key: 'edit_menu', label: 'Edit Menu Items' },
   { key: 'print_bill', label: 'Print Bills' },
   { key: 'hold_order', label: 'Hold Orders' },
@@ -44,24 +47,31 @@ const ALL_DATA: { key: DataKey; label: string }[] = [
   { key: 'view_staff', label: 'View Staff Info' },
 ];
 
-const roleBadge: Record<Role, string> = {
+const BADGES: Record<string, string> = {
   superadmin: 'bg-primary/10 text-primary',
-  cashier: 'bg-success/10 text-success',
   store_manager: 'bg-amber-100/50 text-amber-700',
+  cashier: 'bg-success/10 text-success',
 };
 
-const ROLES_ORDER: Role[] = ['superadmin', 'store_manager', 'cashier'];
+const roleBadge = (role: string) => BADGES[role] ?? 'bg-sky-100/50 text-sky-700';
+
+const ROLE_SLUG = /^[a-zA-Z][a-zA-Z0-9_]{1,31}$/;
 
 export default function PermissionManagement() {
-  const { 
-    users, 
-    permissions, 
-    updatePermissions, 
-    addUser, 
+  const {
+    users,
+    permissions,
+    roles,
+    roleLabel,
+    updatePermissions,
+    createRole,
+    deleteRole,
+    addUser,
     updateUser,
-    removeUser, 
-    user: currentUser 
+    removeUser,
+    user: currentUser,
   } = useAuth();
+  const isSuperAdmin = currentUser?.role === 'superadmin';
   const [editingRole, setEditingRole] = useState<Role | null>(null);
   const [draft, setDraft] = useState<RolePermissions | null>(null);
   const [showAddUser, setShowAddUser] = useState(false);
@@ -69,6 +79,8 @@ export default function PermissionManagement() {
   const [showEditUser, setShowEditUser] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
   const [editUserData, setEditUserData] = useState({ name: '', email: '', password: '', role: 'cashier' as Role });
+  const [showCreateRole, setShowCreateRole] = useState(false);
+  const [newRole, setNewRole] = useState({ key: '', label: '', discountLimit: 5 });
 
   const startEdit = (role: Role) => {
     setEditingRole(role);
@@ -99,13 +111,57 @@ export default function PermissionManagement() {
     }) : d);
   };
 
+  const setDraftDiscountLimit = (value: number) => {
+    if (!draft) return;
+    setDraft(d => d ? ({ ...d, discountLimit: Math.max(0, Number(value) || 0) }) : d);
+  };
+
   const saveDraft = async () => {
     if (!editingRole || !draft) return;
     const updated: PermissionsConfig = { ...permissions, [editingRole]: draft };
     await updatePermissions(updated);
     setEditingRole(null);
     setDraft(null);
-    toast.success(`${ROLE_LABELS[editingRole]} permissions updated`);
+    toast.success(`${roleLabel(editingRole)} permissions updated`);
+  };
+
+  const handleCreateRole = async () => {
+    const key = newRole.key.trim().toLowerCase();
+    if (!key) { toast.error('Enter a role key'); return; }
+    if (!ROLE_SLUG.test(key)) { toast.error('Role key must be 2-32 characters (letters, digits, underscore), no spaces.'); return; }
+    try {
+      await createRole(key, newRole.label.trim() || key, {
+        pageAccess: [],
+        actionPermissions: [],
+        dataVisibility: [],
+        discountLimit: Math.max(0, Number(newRole.discountLimit) || 0),
+      });
+      toast.success('Role created — now configure its permissions');
+      setShowCreateRole(false);
+      setNewRole({ key: '', label: '', discountLimit: 5 });
+      setEditingRole(key);
+      setDraft({
+        pageAccess: [],
+        actionPermissions: [],
+        dataVisibility: [],
+        discountLimit: Math.max(0, Number(newRole.discountLimit) || 0),
+        label: newRole.label.trim() || key,
+        builtIn: false,
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to create role');
+    }
+  };
+
+  const handleDeleteRole = async (role: Role) => {
+    const label = roleLabel(role);
+    if (!window.confirm(`Delete the "${label}" role? This cannot be undone.`)) return;
+    try {
+      await deleteRole(role);
+      toast.success(`Role "${label}" deleted`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to delete role');
+    }
   };
 
   const handleAddUser = async () => {
@@ -118,6 +174,7 @@ export default function PermissionManagement() {
 
   const handleRemoveUser = async (id: string) => {
     if (id === currentUser?.id) { toast.error("Can't remove yourself"); return; }
+
     await removeUser(id);
     toast.success('Staff removed');
   };
@@ -130,10 +187,10 @@ export default function PermissionManagement() {
 
   const handleUpdateUser = async () => {
     if (!editingUser || !editUserData.name || !editUserData.email) return;
-    const updates: any = { 
-      name: editUserData.name, 
-      email: editUserData.email, 
-      role: editUserData.role 
+    const updates: any = {
+      name: editUserData.name,
+      email: editUserData.email,
+      role: editUserData.role
     };
     if (editUserData.password) updates.password = editUserData.password;
 
@@ -152,10 +209,48 @@ export default function PermissionManagement() {
           <h1 className="font-serif text-2xl font-bold text-foreground">User & Permission Management</h1>
           <p className="text-sm text-muted-foreground">Manage staff accounts and control access per role.</p>
         </div>
-        <button onClick={() => setShowAddUser(true)} className="bg-primary text-primary-foreground px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-1.5 hover:bg-secondary transition-colors">
-          <Plus className="w-4 h-4" /> Add Staff
-        </button>
+        <div className="flex gap-2">
+          {isSuperAdmin && (
+            <button onClick={() => setShowCreateRole(true)} className="bg-secondary text-secondary-foreground px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-1.5 hover:bg-secondary/80 transition-colors">
+              <Plus className="w-4 h-4" /> Create Role
+            </button>
+          )}
+          <button onClick={() => setShowAddUser(true)} className="bg-primary text-primary-foreground px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-1.5 hover:bg-secondary transition-colors">
+            <Plus className="w-4 h-4" /> Add Staff
+          </button>
+        </div>
       </div>
+
+      {/* Create role modal */}
+      {showCreateRole && (
+        <div className="fixed inset-0 bg-foreground/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-card rounded-2xl p-6 w-full max-w-md space-y-4" style={{ boxShadow: 'var(--shadow-elevated)' }}>
+            <div className="flex justify-between items-center">
+              <div>
+                <h3 className="font-serif text-lg font-bold">Create New Role</h3>
+                <p className="text-[11px] text-muted-foreground">You can assign pages, actions & discount limit next.</p>
+              </div>
+              <button onClick={() => setShowCreateRole(false)}><X className="w-5 h-5 text-muted-foreground" /></button>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground ml-1">Role Key <span className="text-destructive">*</span></label>
+              <input className={inputClass} placeholder="e.g. receptionist" value={newRole.key} onChange={e => setNewRole({ ...newRole, key: e.target.value })} />
+              <p className="text-[10px] text-muted-foreground/60 ml-1">Lowercase, no spaces. Used as the slug (e.g. <code>receptionist</code>).</p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground ml-1">Display Name <span className="text-destructive">*</span></label>
+              <input className={inputClass} placeholder="e.g. Receptionist" value={newRole.label} onChange={e => setNewRole({ ...newRole, label: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground ml-1">Max Discount (%)</label>
+              <input className={inputClass} type="number" min="0" value={newRole.discountLimit} onChange={e => setNewRole({ ...newRole, discountLimit: Number(e.target.value) || 0 })} />
+            </div>
+            <button onClick={handleCreateRole} className="w-full bg-primary text-primary-foreground py-2.5 rounded-xl text-sm font-medium hover:bg-secondary transition-colors mt-2">
+              Create Role
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Add user modal */}
       {showAddUser && (
@@ -182,10 +277,10 @@ export default function PermissionManagement() {
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground ml-1">Role <span className="text-destructive">*</span></label>
-              <select className={inputClass} value={newUser.role} onChange={e => setNewUser({ ...newUser, role: e.target.value as Role })}>
-                {ROLES_ORDER.map(r => (
-                  <option key={r} value={r}>
-                    {ROLE_LABELS[r]}
+              <select className={inputClass} value={newUser.role} onChange={e => setNewUser({ ...newUser, role: e.target.value })}>
+                {roles.map(r => (
+                  <option key={r.role} value={r.role}>
+                    {r.label}
                   </option>
                 ))}
               </select>
@@ -222,10 +317,10 @@ export default function PermissionManagement() {
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground ml-1">Role <span className="text-destructive">*</span></label>
-              <select className={inputClass} value={editUserData.role} onChange={e => setEditUserData({ ...editUserData, role: e.target.value as Role })}>
-                {ROLES_ORDER.map(r => (
-                  <option key={r} value={r}>
-                    {ROLE_LABELS[r]}
+              <select className={inputClass} value={editUserData.role} onChange={e => setEditUserData({ ...editUserData, role: e.target.value })}>
+                {roles.map(r => (
+                  <option key={r.role} value={r.role}>
+                    {r.label}
                   </option>
                 ))}
               </select>
@@ -237,34 +332,44 @@ export default function PermissionManagement() {
         </div>
       )}
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-        {ROLES_ORDER.map(role => (
-          <div key={role} className="pos-card">
+        {roles.map(role => (
+          <div key={role.role} className="pos-card">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
                   <Shield className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <p className="font-semibold text-foreground">{ROLE_LABELS[role]}</p>
-                  <p className="text-xs text-muted-foreground">{users.filter(u => u.role === role).length} staff</p>
+                  <p className="font-semibold text-foreground">{role.label}</p>
+                  <p className="text-xs text-muted-foreground">{users.filter(u => u.role === role.role).length} staff</p>
+                  <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                    {role.builtIn ? 'System' : 'Custom'} · Discount max {typeof permissions[role.role]?.discountLimit === 'number' ? permissions[role.role].discountLimit : 0}%
+                  </p>
                 </div>
               </div>
-              {role !== 'superadmin' && (
-                <button onClick={() => startEdit(role)} className="text-xs bg-primary/10 text-primary px-3 py-1.5 rounded-lg font-medium hover:bg-primary/20 transition-colors">
-                  Edit
-                </button>
-              )}
+              <div className="flex items-center gap-1">
+                {role.role !== 'superadmin' && (
+                  <button onClick={() => startEdit(role.role)} className="text-xs bg-primary/10 text-primary px-3 py-1.5 rounded-lg font-medium hover:bg-primary/20 transition-colors">
+                    Edit
+                  </button>
+                )}
+                {isSuperAdmin && !role.builtIn && (
+                  <button onClick={() => handleDeleteRole(role.role)} className="p-1.5 text-muted-foreground hover:text-destructive rounded-lg hover:bg-destructive/10 transition-colors" title={`Delete ${role.label}`}>
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
             </div>
             <div className="space-y-2">
               <p className="text-xs font-medium text-muted-foreground">Pages:</p>
               <div className="flex flex-wrap gap-1">
-                {permissions[role].pageAccess.map(p => (
+                {permissions[role.role].pageAccess.map(p => (
                   <span key={p} className="text-xs bg-muted px-2 py-0.5 rounded-full text-muted-foreground capitalize">{p}</span>
                 ))}
               </div>
               <p className="text-xs font-medium text-muted-foreground mt-2">Actions:</p>
               <div className="flex flex-wrap gap-1">
-                {permissions[role].actionPermissions.map(a => (
+                {permissions[role.role].actionPermissions.map(a => (
                   <span key={a} className="text-xs bg-primary/5 px-2 py-0.5 rounded-full text-primary capitalize">{a.replace(/_/g, ' ')}</span>
                 ))}
               </div>
@@ -278,7 +383,7 @@ export default function PermissionManagement() {
         <div className="fixed inset-0 bg-foreground/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-card rounded-2xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto space-y-5" style={{ boxShadow: 'var(--shadow-elevated)' }}>
             <div className="flex justify-between items-center">
-              <h3 className="font-serif text-lg font-bold">Edit {ROLE_LABELS[editingRole]} permissions</h3>
+              <h3 className="font-serif text-lg font-bold">Edit {roleLabel(editingRole)} permissions</h3>
               <button onClick={() => { setEditingRole(null); setDraft(null); }}><X className="w-5 h-5 text-muted-foreground" /></button>
             </div>
 
@@ -315,6 +420,18 @@ export default function PermissionManagement() {
                     <span className="text-sm text-foreground">{a.label}</span>
                   </label>
                 ))}
+              </div>
+
+              <div className="mt-4 rounded-xl bg-muted/40 p-3">
+                <label className="text-xs font-semibold text-foreground block mb-1.5">Max Discount Limit (%)</label>
+                <p className="text-[10px] text-muted-foreground/70 mb-2">Applied when this role gives a discount. 0 disables discounts entirely. Superadmin is always unlimited.</p>
+                <input
+                  type="number"
+                  min="0"
+                  value={draft.discountLimit ?? 0}
+                  onChange={e => setDraftDiscountLimit(Number(e.target.value) || 0)}
+                  className="w-32 bg-background border border-border rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                />
               </div>
             </div>
 
@@ -368,7 +485,7 @@ export default function PermissionManagement() {
                 </td>
                 <td className="py-3 px-2 text-muted-foreground">{u.email}</td>
                 <td className="py-3 px-2">
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${roleBadge[u.role]}`}>{ROLE_LABELS[u.role]}</span>
+                  <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${roleBadge(u.role)}`}>{roleLabel(u.role)}</span>
                 </td>
                 <td className="py-3 px-2 text-right">
                   <div className="flex items-center justify-end gap-1">
@@ -390,4 +507,3 @@ export default function PermissionManagement() {
     </div>
   );
 }
-

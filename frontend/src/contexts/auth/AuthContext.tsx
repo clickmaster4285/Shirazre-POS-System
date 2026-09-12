@@ -3,15 +3,22 @@ import { api, setToken } from '@/lib/api/api';
 import { fetchAllPaginatedItems } from '@/lib/api/paginatedFetch';
 import { POS_REALTIME_EVENT } from '@/hooks/pos/use-pos-realtime';
 
-export type Role = 'superadmin' | 'cashier' | 'store_manager';
+export type Role = string;
 
-export const ROLE_LABELS: Record<Role, string> = {
+export const ROLE_LABELS: Record<string, string> = {
   superadmin: 'Superadmin',
   cashier: 'Cashier',
   store_manager: 'Store Manager',
 };
 
+export interface RoleInfo {
+  role: string;
+  label: string;
+  builtIn: boolean;
+}
+
 export const MANAGER_ROLES: Role[] = ['superadmin'];
+export const BUILTIN_ROLES: string[] = ['superadmin', 'cashier', 'store_manager'];
 
 export interface User {
   id: string;
@@ -53,7 +60,9 @@ export type ActionKey =
   | 'edit_menu'
   | 'print_bill'
   | 'hold_order'
-  | 'change_table_status';
+  | 'change_table_status'
+  | 'delete_order'
+  | 'revert_order';
 
 export type DataKey = 'view_revenue' | 'view_all_orders' | 'view_reports' | 'view_staff';
 
@@ -61,9 +70,15 @@ export interface RolePermissions {
   pageAccess: PageKey[];
   actionPermissions: ActionKey[];
   dataVisibility: DataKey[];
+  /** Max discount in % a role may apply. 0 = no discount. Superadmin bypasses. */
+  discountLimit?: number;
+  /** Display name for the role (from backend). */
+  label?: string;
+  /** Whether this is a system role that cannot be deleted. */
+  builtIn?: boolean;
 }
 
-export type PermissionsConfig = Record<Role, RolePermissions>;
+export type PermissionsConfig = Record<string, RolePermissions>;
 
 const ALL_PAGE_KEYS: PageKey[] = [
   'dashboard',
@@ -89,6 +104,7 @@ const ALL_PAGE_KEYS: PageKey[] = [
   'payment',
   'mobileapp',
   'outdoordelivery',
+  'staffbills',
 ];
 
 const MANAGER_ACTIONS: ActionKey[] = [
@@ -98,25 +114,36 @@ const MANAGER_ACTIONS: ActionKey[] = [
   'print_bill',
   'hold_order',
   'change_table_status',
+  'delete_order',
+  'revert_order',
 ];
 
 const MANAGER_DATA: DataKey[] = ['view_revenue', 'view_all_orders', 'view_reports', 'view_staff'];
 
 const DEFAULT_PERMISSIONS: PermissionsConfig = {
   superadmin: {
+    label: 'Superadmin',
+    builtIn: true,
     pageAccess: [...ALL_PAGE_KEYS],
     actionPermissions: [...MANAGER_ACTIONS],
     dataVisibility: [...MANAGER_DATA],
+    discountLimit: 100,
   },
   cashier: {
+    label: 'Cashier',
+    builtIn: true,
     pageAccess: ['terminal', 'orders', 'tables', 'billing', 'delivery', 'giftcards'],
     actionPermissions: ['print_bill', 'apply_discount', 'hold_order', 'change_table_status'],
     dataVisibility: ['view_all_orders'],
+    discountLimit: 5,
   },
   store_manager: {
+    label: 'Store Manager',
+    builtIn: true,
     pageAccess: ['dashboard', 'terminal', 'orders', 'tables', 'kitchen', 'billing', 'inventory', 'reports', 'expenses', 'delivery', 'outdoordelivery'],
     actionPermissions: ['print_bill', 'apply_discount', 'hold_order', 'change_table_status', 'edit_menu'],
     dataVisibility: ['view_all_orders', 'view_reports', 'view_staff'],
+    discountLimit: 10,
   },
 };
 
@@ -125,14 +152,14 @@ function normalizeEmail(email: string) {
 }
 
 function migrateRole(r: string): Role {
-  const map: Record<string, Role> = {
+  const map: Record<string, string> = {
     admin: 'superadmin',
     superadmin: 'superadmin',
     cashier: 'cashier',
     store_manager: 'store_manager',
     manager: 'store_manager',
   };
-  return map[r] ?? 'cashier';
+  return (map[r] ?? r) || 'cashier';
 }
 
 function upgradeLegacyUser(u: User): User {
@@ -169,8 +196,21 @@ function uniq<T>(arr: T[]): T[] {
   return Array.from(new Set(arr));
 }
 
+function prettifyRole(role: string): string {
+  if (!role) return 'Unknown Role';
+  return role
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export function roleLabel(role: string, permissions?: PermissionsConfig): string {
+  const saved = permissions?.[role];
+  if (saved?.label) return saved.label;
+  return ROLE_LABELS[role] ?? prettifyRole(role);
+}
+
 function mergeRolePermissions(base: RolePermissions, saved?: Partial<RolePermissions> | null): RolePermissions {
-  if (!saved?.pageAccess?.length) return base;
+  if (!saved?.pageAccess?.length) return { ...base, label: saved?.label || base.label, builtIn: base.builtIn ?? true };
   const extraPages = base.pageAccess.filter(p => !saved.pageAccess!.includes(p));
   const extraActions = base.actionPermissions.filter(a => !(saved.actionPermissions ?? []).includes(a));
   const extraData = base.dataVisibility.filter(d => !(saved.dataVisibility ?? []).includes(d));
@@ -178,6 +218,9 @@ function mergeRolePermissions(base: RolePermissions, saved?: Partial<RolePermiss
     pageAccess: uniq([...saved.pageAccess, ...extraPages]) as PageKey[],
     actionPermissions: uniq([...(saved.actionPermissions ?? []), ...extraActions]) as ActionKey[],
     dataVisibility: uniq([...(saved.dataVisibility ?? []), ...extraData]) as DataKey[],
+    discountLimit: typeof saved.discountLimit === 'number' ? saved.discountLimit : base.discountLimit,
+    label: saved.label || base.label || '',
+    builtIn: base.builtIn ?? true,
   };
 }
 
@@ -188,13 +231,37 @@ function migratePermissionsFromStorage(parsed: Record<string, RolePermissions>):
     delete remapped.admin;
   }
 
-  const roles: Role[] = ['superadmin', 'cashier', 'store_manager'];
-  const out = { ...DEFAULT_PERMISSIONS };
-  for (const role of roles) {
+  // Start from backend truth, then fold built-in defaults over the 3 system roles.
+  const out: PermissionsConfig = { ...remapped };
+  for (const role of BUILTIN_ROLES) {
     const saved = remapped[role];
     out[role] = mergeRolePermissions(DEFAULT_PERMISSIONS[role], saved);
   }
+  // Ensure custom roles carry a label + non-builtIn flag.
+  for (const role of Object.keys(out)) {
+    if (BUILTIN_ROLES.includes(role)) continue;
+    out[role] = {
+      ...out[role],
+      label: out[role].label || prettifyRole(role),
+      builtIn: out[role].builtIn === true,
+      pageAccess: Array.isArray(out[role].pageAccess) ? out[role].pageAccess : [],
+      actionPermissions: Array.isArray(out[role].actionPermissions) ? out[role].actionPermissions : [],
+      dataVisibility: Array.isArray(out[role].dataVisibility) ? out[role].dataVisibility : [],
+      discountLimit: typeof out[role].discountLimit === 'number' ? out[role].discountLimit : 0,
+    };
+  }
   return out;
+}
+
+function orderRoles(config: PermissionsConfig): RoleInfo[] {
+  const rank = (role: string) => {
+    if (role === 'superadmin') return 0;
+    if (config[role]?.builtIn) return 1;
+    return 2;
+  };
+  return Object.keys(config)
+    .sort((a, b) => rank(a) - rank(b) || roleLabel(a, config).localeCompare(roleLabel(b, config)))
+    .map(role => ({ role, label: roleLabel(role, config), builtIn: config[role]?.builtIn === true }));
 }
 
 interface AuthContextType {
@@ -202,12 +269,16 @@ interface AuthContextType {
   loading: boolean;
   users: User[];
   permissions: PermissionsConfig;
+  roles: RoleInfo[];
+  roleLabel: (role: string) => string;
   login: (email: string, password: string) => Promise<string | null>;
   logout: () => void;
   hasPageAccess: (page: PageKey) => boolean;
   hasAction: (action: ActionKey) => boolean;
   hasDataAccess: (data: DataKey) => boolean;
   updatePermissions: (config: PermissionsConfig) => Promise<void>;
+  createRole: (roleKey: string, label: string, config: Partial<RolePermissions>) => Promise<void>;
+  deleteRole: (roleKey: string) => Promise<void>;
   addUser: (user: Omit<User, 'id'>, password: string) => Promise<void>;
   updateUser: (id: string, updates: Partial<Omit<User, 'id'>> & { password?: string }) => Promise<void>;
   removeUser: (id: string) => Promise<void>;
@@ -294,29 +365,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPermissions(DEFAULT_PERMISSIONS);
   };
 
-  const currentPermissions = user ? permissions[user.role] : null;
+  const currentPermissions = user ? permissions[user.role] ?? null : null;
+
+  const rolePermsOf = (role: string): RolePermissions | undefined => permissions[role];
+
+  const roleLabelOf = (role: string) => roleLabel(role, permissions);
 
   const hasPageAccess = (page: PageKey) => {
     if (!user) return false;
     if (MANAGER_ROLES.includes(user.role)) return true;
-    return permissions[user.role].pageAccess.includes(page);
+    return rolePermsOf(user.role)?.pageAccess.includes(page) ?? false;
   };
 
   const hasAction = (action: ActionKey) => {
     if (!user) return false;
     if (MANAGER_ROLES.includes(user.role)) return true;
-    return permissions[user.role].actionPermissions.includes(action);
+    return rolePermsOf(user.role)?.actionPermissions.includes(action) ?? false;
   };
 
   const hasDataAccess = (data: DataKey) => {
     if (!user) return false;
     if (MANAGER_ROLES.includes(user.role)) return true;
-    return permissions[user.role].dataVisibility.includes(data);
+    return rolePermsOf(user.role)?.dataVisibility.includes(data) ?? false;
   };
 
   const updatePermissions = async (config: PermissionsConfig) => {
     setPermissions(config);
     await api('/permissions', { method: 'PUT', body: JSON.stringify(config) });
+  };
+
+  const createRole = async (roleKey: string, label: string, config: Partial<RolePermissions>) => {
+    await api('/permissions/roles', {
+      method: 'POST',
+      body: JSON.stringify({ role: roleKey, label, ...config }),
+    });
+    await fetchSession();
+  };
+
+  const deleteRole = async (roleKey: string) => {
+    await api(`/permissions/roles/${encodeURIComponent(roleKey)}`, { method: 'DELETE' });
+    await fetchSession();
   };
 
   const addUser = async (newUser: Omit<User, 'id'>, password: string) => {
@@ -355,12 +443,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       users,
       permissions,
+      roles: orderRoles(permissions),
+      roleLabel: roleLabelOf,
       login,
       logout,
       hasPageAccess,
       hasAction,
       hasDataAccess,
       updatePermissions,
+      createRole,
+      deleteRole,
       addUser,
       updateUser,
       removeUser,

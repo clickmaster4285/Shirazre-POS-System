@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { usePOSStore } from '@/stores/pos/posStore';
-import { useAuth, ROLE_LABELS, type PageKey } from '@/contexts/auth/AuthContext';
+import { useAuth, type PageKey } from '@/contexts/auth/AuthContext';
 import { BrandHeader } from '@/components/branding/BrandHeader';
 import Logo from '@/components/branding/Logo';
 
@@ -64,12 +64,13 @@ const allLinks: { to: string; icon: typeof LayoutDashboard; label: string; page:
 
 const roleBadge: Record<string, string> = {
   superadmin: 'bg-primary/20 text-primary-foreground',
+  store_manager: 'bg-amber-100/50 text-amber-700',
   cashier: 'bg-success/20 text-success',
 };
 
 export default function POSLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { user, loading, logout, hasPageAccess } = useAuth();
+  const { user, loading, logout, hasPageAccess, roleLabel } = useAuth();
   const { cart, setShowDiscardPopup, setPendingNavigation } = usePOSStore();
 
   const handleNavigation = (to: string) => {
@@ -114,7 +115,7 @@ export default function POSLayout() {
           <div className="bg-sidebar-accent/50 rounded-xl p-3">
             <p className="text-sm font-medium text-sidebar-foreground truncate">{user.name}</p>
             <div className="flex items-center gap-2 mt-1">
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${roleBadge[user.role] ?? 'bg-muted'}`}>{ROLE_LABELS[user.role]}</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${roleBadge[user.role] ?? 'bg-sky-100/50 text-sky-700'}`}>{roleLabel(user.role)}</span>
             </div>
           </div>
         </div>
@@ -177,7 +178,7 @@ export default function POSLayout() {
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground hidden sm:inline">{user.email}</span>
             <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-muted text-muted-foreground border border-border">
-              {ROLE_LABELS[user.role]}
+              {roleLabel(user.role)}
             </span>
           </div>
         </header>
