@@ -13,7 +13,7 @@ exports.getDemoAccounts = async (_req, res) => {
   const users = await User.find({}, { passwordHash: 0 }).lean();
   res.json({
     items: users.map((u) => ({ name: u.name, email: u.email, role: u.role })),
-    note: "Passwords: super123, hassaan123, fahad123, cashier123",
+    note: "Admin credentials are configured via SUPERADMIN_EMAIL/SUPERADMIN_PASSWORD in .env",
   });
 };
 
