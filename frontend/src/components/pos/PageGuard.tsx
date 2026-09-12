@@ -57,6 +57,7 @@ const allPages: PageKey[] = [
   'payment',
   'mobileapp',
   'outdoordelivery',
+  'staffbills',
 ];
 
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -80,7 +81,7 @@ export default function PageGuard({ page, children }: Props) {
     // If landing on default /pos route without dashboard access, redirect to first accessible page
     const firstAccessible = allPages.find(p => {
       if (MANAGER_ROLES.includes(user.role)) return true;
-      return permissions[user.role].pageAccess.includes(p);
+      return permissions[user.role]?.pageAccess.includes(p) ?? false;
     });
 
     if (firstAccessible && pageToRoute[firstAccessible] !== location.pathname) {

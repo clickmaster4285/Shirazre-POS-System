@@ -94,6 +94,7 @@ const ALL_PAGES = [
   "payment",
   "mobileapp",
   "outdoordelivery",
+  "staffbills",
 ];
 
 const MANAGER_ACTIONS = [
@@ -103,6 +104,8 @@ const MANAGER_ACTIONS = [
   "print_bill",
   "hold_order",
   "change_table_status",
+  "delete_order",
+  "revert_order",
 ];
 
 const MANAGER_DATA = ["view_revenue", "view_all_orders", "view_reports", "view_staff"];
@@ -115,33 +118,30 @@ async function initializeRolePermissions() {
   const roles = [
     {
       role: "superadmin",
+      label: "Superadmin",
+      builtIn: true,
       pageAccess: ALL_PAGES,
       actionPermissions: MANAGER_ACTIONS,
       dataVisibility: MANAGER_DATA,
-    },
-    {
-      role: "hassaan",
-      pageAccess: ALL_PAGES,
-      actionPermissions: MANAGER_ACTIONS,
-      dataVisibility: MANAGER_DATA,
-    },
-    {
-      role: "fahad",
-      pageAccess: ALL_PAGES,
-      actionPermissions: MANAGER_ACTIONS,
-      dataVisibility: MANAGER_DATA,
+      discountLimit: 100,
     },
     {
       role: "cashier",
+      label: "Cashier",
+      builtIn: true,
       pageAccess: CASHIER_PAGES,
       actionPermissions: CASHIER_ACTIONS,
       dataVisibility: CASHIER_DATA,
+      discountLimit: 5,
     },
     {
       role: "store_manager",
+      label: "Store Manager",
+      builtIn: true,
       pageAccess: ["dashboard", "terminal", "orders", "tables", "kitchen", "billing", "inventory", "reports", "expenses", "delivery", "outdoordelivery"],
       actionPermissions: ["print_bill", "apply_discount", "hold_order", "change_table_status", "edit_menu"],
       dataVisibility: ["view_all_orders", "view_reports", "view_staff"],
+      discountLimit: 10,
     },
   ];
 
@@ -174,6 +174,25 @@ async function initializeRolePermissions() {
         updated = true;
       }
 
+      // Backfill newly-added fields (label, builtIn, discountLimit) only when
+      // they were genuinely absent or left at schema defaults in the stored
+      // document (use lean() to skip schema defaults).
+      const raw = await Permission.findById(permExists._id).lean();
+      if (raw) {
+        if ((raw.label === undefined || raw.label === null || raw.label === "") && roleConfig.label) {
+          permExists.label = roleConfig.label;
+          updated = true;
+        }
+        if ((raw.builtIn === undefined || raw.builtIn === false) && roleConfig.builtIn === true) {
+          permExists.builtIn = true;
+          updated = true;
+        }
+        if ((raw.discountLimit === undefined || raw.discountLimit === 0) && typeof roleConfig.discountLimit === "number" && roleConfig.discountLimit > 0) {
+          permExists.discountLimit = roleConfig.discountLimit;
+          updated = true;
+        }
+      }
+
       if (updated) {
         await permExists.save();
         console.log(`✓ ${roleConfig.role} permissions updated with new modules`);
@@ -201,13 +220,8 @@ async function initializeUsers() {
     return;
   }
 
-  // Remove all existing login users. The only account is the superadmin
-  // defined in .env. (Seeded/default users are intentionally not created.)
-  const removed = await User.deleteMany({});
-  if (removed.deletedCount > 0) {
-    console.log(`✓ Removed ${removed.deletedCount} existing user(s)`);
-  }
-
+  // Ensure the superadmin account from .env exists. Existing staff accounts are
+  // left untouched (only the superadmin email is upserted).
   const passwordHash = await bcrypt.hash(password, 10);
   await User.findOneAndUpdate(
     { email },

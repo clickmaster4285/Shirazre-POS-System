@@ -19,6 +19,7 @@ interface BillPaymentPanelProps {
   taxRates: { gstRate: number; serviceChargeRate: number; takeawayChargeRate: number; minimumOrderAmount: number };
   currentUser: any;
   hasAction: (action: string) => boolean;
+  discountLimit: number;
   onPaymentComplete: () => Promise<void>;
   markOrderAsPrinted: (id: string) => void;
   isOrderPrinted: (id: string) => boolean;
@@ -35,6 +36,7 @@ export const BillPaymentPanel: React.FC<BillPaymentPanelProps> = ({
   taxRates,
   currentUser,
   hasAction,
+  discountLimit,
   onPaymentComplete,
   markOrderAsPrinted,
   isOrderPrinted,
@@ -152,6 +154,16 @@ export const BillPaymentPanel: React.FC<BillPaymentPanelProps> = ({
     }
     return Math.min(Math.max(discountValue, 0), subtotal);
   }, [subtotal, discountMode, discountValue]);
+
+  const setDiscountWithLimit = (v: number) => {
+    const val = Number(v) || 0;
+    if (discountMode === 'percent' && val > discountLimit) {
+      toast.error(`Discount is limited to ${discountLimit}% for this role`);
+      setDiscountValue(discountLimit);
+      return;
+    }
+    setDiscountValue(Math.max(0, val));
+  };
 
   const taxTotals = useMemo(() => {
     return computePakistanTaxTotals(
@@ -771,7 +783,7 @@ export const BillPaymentPanel: React.FC<BillPaymentPanelProps> = ({
             {/* Discount / Tax toggles - only for pending bills */}
             {order.status !== 'completed' && (
               <div className="space-y-4">
-                {currentUser?.role === 'superadmin' && (
+                {hasAction('apply_discount') && (
                   <div className="rounded-xl border border-border/70 p-3 bg-muted/20">
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-3">
                       <div className="text-xs font-semibold text-muted-foreground">Discount</div>
@@ -803,13 +815,13 @@ export const BillPaymentPanel: React.FC<BillPaymentPanelProps> = ({
                         type="number"
                         min="0"
                         value={discountValue}
-                        onChange={(e) => setDiscountValue(Number(e.target.value) || 0)}
+                        onChange={(e) => setDiscountWithLimit(Number(e.target.value))}
                         className="w-full sm:w-32 bg-background border border-border rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20"
                       />
                       {discountMode === 'percent' && (
                         <div className="flex gap-2 flex-wrap">
-                          {[0, 5, 10, 15, 20].map(d => (
-                            <button key={d} type="button" onClick={() => setDiscountValue(d)}
+                          {[0, 5, 10, 15, 20].filter(d => discountLimit >= 100 || d <= Math.max(discountLimit, 0)).map(d => (
+                            <button key={d} type="button" onClick={() => setDiscountWithLimit(d)}
                               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${discountValue === d ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-card border border-border text-muted-foreground hover:border-primary/30'}`}>
                               {d}%
                             </button>
@@ -817,6 +829,9 @@ export const BillPaymentPanel: React.FC<BillPaymentPanelProps> = ({
                         </div>
                       )}
                     </div>
+                    {discountLimit < 100 && (
+                      <p className="text-[10px] text-muted-foreground/60 mt-2">This role can give up to {discountLimit}% discount.</p>
+                    )}
                   </div>
                 )}
 
@@ -952,7 +967,7 @@ export const BillPaymentPanel: React.FC<BillPaymentPanelProps> = ({
 
           <div className="mt-6 flex flex-col gap-2 shrink-0 border-t border-border pt-5">
             <div className="flex gap-2">
-              {currentUser?.role === 'superadmin' && order.status !== 'completed' && hasAction('delete_order') && (
+              {hasAction('delete_order') && order.status !== 'completed' && (
                 <button
                   onClick={handleVoidOrder}
                   disabled={isLocked('void-order')}

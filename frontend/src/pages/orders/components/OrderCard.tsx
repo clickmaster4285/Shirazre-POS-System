@@ -22,13 +22,23 @@ import { TableInfo } from '@/data/pos/mockData';
 interface OrderCardProps {
   order: any;
   onUpdateStatus: (id: string, status: string) => void;
+  onDeleteOrder?: (id: string) => Promise<void> | void;
   tables?: TableInfo[];
 }
 
-export const OrderCard = memo(({ order, onUpdateStatus, tables = [] }: OrderCardProps) => {
-  const { user } = useAuth();
-  const isSuperAdmin = user?.role === 'superadmin';
+export const OrderCard = memo(({ order, onUpdateStatus, onDeleteOrder, tables = [] }: OrderCardProps) => {
+  const { hasAction } = useAuth();
   const { setEditingOrder, setCancellingOrderId, setSwitchingTypeOrder } = useOrderStore();
+
+  const canVoid = hasAction('void_order');
+  const canRevert = hasAction('revert_order');
+  const canDelete = hasAction('delete_order');
+
+  const handleDeleteOrder = () => {
+    if (!onDeleteOrder || !order.dbId) return;
+    if (!window.confirm('Permanently delete this order? This cannot be undone.')) return;
+    void onDeleteOrder(order.dbId);
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -104,20 +114,28 @@ export const OrderCard = memo(({ order, onUpdateStatus, tables = [] }: OrderCard
                    <CheckCircle2 className="w-3.5 h-3.5" /> Mark as Ready
                  </button>
                )}
-               {isSuperAdmin && (
+{canVoid && (
                  <button 
                   onClick={() => setCancellingOrderId(order.dbId)}
                   className="w-full px-4 py-2.5 text-xs text-left hover:bg-red-500/10 text-red-500 flex items-center gap-2 font-bold"
                  >
-                   <Trash2 className="w-3.5 h-3.5" /> Cancel Order
+                    <Trash2 className="w-3.5 h-3.5" /> Cancel Order
                  </button>
                )}
-               {isSuperAdmin && (order.status === 'completed' || order.status === 'cancelled') && (
+               {canDelete && (
+                 <button 
+                  onClick={handleDeleteOrder}
+                  className="w-full px-4 py-2.5 text-xs text-left hover:bg-destructive/10 text-destructive flex items-center gap-2 font-bold"
+                 >
+                    <Trash2 className="w-3.5 h-3.5" /> Delete Order
+                 </button>
+               )}
+               {canRevert && (order.status === 'completed' || order.status === 'cancelled') && (
                  <button 
                   onClick={() => onUpdateStatus(order.dbId, 'pending')}
                   className="w-full px-4 py-2.5 text-xs text-left hover:bg-amber-500/10 text-amber-500 flex items-center gap-2 font-bold"
                  >
-                   <Repeat className="w-3.5 h-3.5" /> Revert to Pending
+                    <Repeat className="w-3.5 h-3.5" /> Revert to Pending
                  </button>
                )}
             </div>

@@ -20,8 +20,12 @@ import { BillPaymentPanel } from './components/BillPaymentPanel';
 
 export default function Billing() {
   const { isLocked, runLocked } = useSubmitLock();
-  const { hasAction, user: currentUser } = useAuth();
+  const { hasAction, user: currentUser, permissions } = useAuth();
   const queryClient = useQueryClient();
+
+  const discountLimit = currentUser
+    ? (currentUser.role === 'superadmin' ? 100 : (permissions[currentUser.role]?.discountLimit ?? 0))
+    : 0;
 
   // Core State
   const [orders, setOrders] = useState<(Order & { dbId?: string; printed?: boolean })[]>([]);
@@ -322,6 +326,7 @@ export default function Billing() {
           taxRates={taxRates}
           currentUser={currentUser}
           hasAction={hasAction}
+          discountLimit={discountLimit}
           onPaymentComplete={async () => {
             await loadOrders();
             queryClient.invalidateQueries({ queryKey: ['pos-tables', 'dashboard-overview', 'reports-dashboard', 'analytics-dashboard'] });
