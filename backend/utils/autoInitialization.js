@@ -94,6 +94,7 @@ const ALL_PAGES = [
   "payment",
   "mobileapp",
   "outdoordelivery",
+  "staffbills",
 ];
 
 const MANAGER_ACTIONS = [
@@ -103,6 +104,8 @@ const MANAGER_ACTIONS = [
   "print_bill",
   "hold_order",
   "change_table_status",
+  "delete_order",
+  "revert_order",
 ];
 
 const MANAGER_DATA = ["view_revenue", "view_all_orders", "view_reports", "view_staff"];
@@ -118,30 +121,21 @@ async function initializeRolePermissions() {
       pageAccess: ALL_PAGES,
       actionPermissions: MANAGER_ACTIONS,
       dataVisibility: MANAGER_DATA,
-    },
-    {
-      role: "hassaan",
-      pageAccess: ALL_PAGES,
-      actionPermissions: MANAGER_ACTIONS,
-      dataVisibility: MANAGER_DATA,
-    },
-    {
-      role: "fahad",
-      pageAccess: ALL_PAGES,
-      actionPermissions: MANAGER_ACTIONS,
-      dataVisibility: MANAGER_DATA,
+      discountLimit: 100,
     },
     {
       role: "cashier",
       pageAccess: CASHIER_PAGES,
       actionPermissions: CASHIER_ACTIONS,
       dataVisibility: CASHIER_DATA,
+      discountLimit: 5,
     },
     {
       role: "store_manager",
       pageAccess: ["dashboard", "terminal", "orders", "tables", "kitchen", "billing", "inventory", "reports", "expenses", "delivery", "outdoordelivery"],
       actionPermissions: ["print_bill", "apply_discount", "hold_order", "change_table_status", "edit_menu"],
       dataVisibility: ["view_all_orders", "view_reports", "view_staff"],
+      discountLimit: 10,
     },
   ];
 

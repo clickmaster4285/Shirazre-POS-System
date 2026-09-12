@@ -3,17 +3,15 @@ import { api, setToken } from '@/lib/api/api';
 import { fetchAllPaginatedItems } from '@/lib/api/paginatedFetch';
 import { POS_REALTIME_EVENT } from '@/hooks/pos/use-pos-realtime';
 
-export type Role = 'superadmin' | 'hassaan' | 'fahad' | 'cashier' | 'store_manager';
+export type Role = 'superadmin' | 'cashier' | 'store_manager';
 
 export const ROLE_LABELS: Record<Role, string> = {
   superadmin: 'Superadmin',
-  hassaan: 'Hassaan shb',
-  fahad: 'Fahad shb',
   cashier: 'Cashier',
   store_manager: 'Store Manager',
 };
 
-export const MANAGER_ROLES: Role[] = ['superadmin', 'hassaan', 'fahad'];
+export const MANAGER_ROLES: Role[] = ['superadmin'];
 
 export interface User {
   id: string;
@@ -110,16 +108,6 @@ const DEFAULT_PERMISSIONS: PermissionsConfig = {
     actionPermissions: [...MANAGER_ACTIONS],
     dataVisibility: [...MANAGER_DATA],
   },
-  hassaan: {
-    pageAccess: [...ALL_PAGE_KEYS],
-    actionPermissions: [...MANAGER_ACTIONS],
-    dataVisibility: [...MANAGER_DATA],
-  },
-  fahad: {
-    pageAccess: [...ALL_PAGE_KEYS],
-    actionPermissions: [...MANAGER_ACTIONS],
-    dataVisibility: [...MANAGER_DATA],
-  },
   cashier: {
     pageAccess: ['terminal', 'orders', 'tables', 'billing', 'delivery', 'giftcards'],
     actionPermissions: ['print_bill', 'apply_discount', 'hold_order', 'change_table_status'],
@@ -140,11 +128,7 @@ function migrateRole(r: string): Role {
   const map: Record<string, Role> = {
     admin: 'superadmin',
     superadmin: 'superadmin',
-    hassaan: 'hassaan',
-    fahad: 'fahad',
     cashier: 'cashier',
-    hr: 'hassaan',
-    waiter: 'fahad',
     store_manager: 'store_manager',
     manager: 'store_manager',
   };
@@ -178,8 +162,6 @@ function normalizeUsers(input: User[]): User[] {
 
 const DEFAULT_USERS: User[] = [
   { id: '1', name: 'Superadmin', email: 'superadmin@gmail.com', role: 'superadmin', avatar: '' },
-  { id: '2', name: 'Hassaan shb', email: 'hassaan@gmail.com', role: 'hassaan', avatar: '' },
-  { id: '3', name: 'Fahad shb', email: 'fahad@gmail.com', role: 'fahad', avatar: '' },
   { id: '4', name: 'Cashier', email: 'cashier@gmail.com', role: 'cashier', avatar: '' },
 ];
 
@@ -205,10 +187,8 @@ function migratePermissionsFromStorage(parsed: Record<string, RolePermissions>):
     remapped.superadmin = parsed.admin;
     delete remapped.admin;
   }
-  if (parsed.hr && !parsed.hassaan) remapped.hassaan = parsed.hr;
-  if (parsed.waiter && !parsed.fahad) remapped.fahad = parsed.waiter;
 
-  const roles: Role[] = ['superadmin', 'hassaan', 'fahad', 'cashier', 'store_manager'];
+  const roles: Role[] = ['superadmin', 'cashier', 'store_manager'];
   const out = { ...DEFAULT_PERMISSIONS };
   for (const role of roles) {
     const saved = remapped[role];

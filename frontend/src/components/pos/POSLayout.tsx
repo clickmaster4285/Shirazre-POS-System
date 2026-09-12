@@ -64,8 +64,6 @@ const allLinks: { to: string; icon: typeof LayoutDashboard; label: string; page:
 
 const roleBadge: Record<string, string> = {
   superadmin: 'bg-primary/20 text-primary-foreground',
-  hassaan: 'bg-secondary/30 text-secondary-foreground',
-  fahad: 'bg-accent/30 text-accent-foreground',
   cashier: 'bg-success/20 text-success',
 };
 

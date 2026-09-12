@@ -46,13 +46,11 @@ const ALL_DATA: { key: DataKey; label: string }[] = [
 
 const roleBadge: Record<Role, string> = {
   superadmin: 'bg-primary/10 text-primary',
-  hassaan: 'bg-secondary/20 text-secondary-foreground',
-  fahad: 'bg-accent/30 text-accent-foreground',
   cashier: 'bg-success/10 text-success',
   store_manager: 'bg-amber-100/50 text-amber-700',
 };
 
-const ROLES_ORDER: Role[] = ['superadmin', 'hassaan', 'fahad', 'store_manager', 'cashier'];
+const ROLES_ORDER: Role[] = ['superadmin', 'store_manager', 'cashier'];
 
 export default function PermissionManagement() {
   const { 
